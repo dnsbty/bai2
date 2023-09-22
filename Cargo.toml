@@ -1,0 +1,22 @@
+[package]
+name = "bai2"
+version = "0.1.0"
+edition = "2021"
+authors = ["Dennis Beatty <dennis@dcbeatty.com>"]
+license = "MIT"
+description = "A tool to parse BAI2 files"
+readme = "README.md"
+homepage = "https://github.com/dnsbty/bai2"
+repository = "https://github.com/dnsbty/bai2"
+keywords = ["bai2", "bank", "treasury", "file", "parser"]
+categories = ["command-line-utilities"]
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+chrono = { version = "0.4.31", features = ["serde"] }
+clap = { version = "4.4.4", features = ["derive"] }
+env_logger = "0.10.0"
+log = "0.4.20"
+serde = { version = "1.0.188", features = ["derive"] }
+serde_json = "1.0.107"
