@@ -313,6 +313,7 @@ impl Account {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "snake_case")]
 pub enum FundsType {
     Unknown,
     ImmediateAvailability,
@@ -370,6 +371,7 @@ impl AccountHeader {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "snake_case")]
 pub enum AccountType {
     AchNetPosition,
     AdjustedBalance,
@@ -510,9 +512,10 @@ pub struct Transaction {
     bank_reference_number: String,
     continuations: Vec<Continuation>,
     customer_reference_number: String,
+    direction: Direction,
     funds_type: Option<FundsType>,
     text: String,
-    transaction_type: Option<Direction>,
+    transaction_type: TransactionType,
 }
 
 impl Transaction {
@@ -520,14 +523,17 @@ impl Transaction {
         let fields = line.split(",").collect::<Vec<&str>>();
         debug!("Parsing transaction: {:?}", fields);
 
+        let (direction, transaction_type) = TransactionType::parse(fields[1]);
+
         let mut transaction = Transaction {
             amount: parse_int(fields[2]),
             bank_reference_number: parse_string(fields[4]),
             continuations: Vec::new(),
             customer_reference_number: parse_string(fields[5]),
+            direction,
             funds_type: FundsType::parse(fields[3]),
             text: "".to_string(),
-            transaction_type: Direction::parse(fields[1]),
+            transaction_type,
         };
 
         if fields.len() > 6 {
@@ -539,12 +545,15 @@ impl Transaction {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "snake_case")]
 enum Direction {
-    Credit(TransactionType),
-    Debit(TransactionType),
+    Credit,
+    Debit,
+    Unknown,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "snake_case")]
 enum TransactionType {
     AccountAnalysisFee,
     AccountHolderInitiatedAchDebit,
@@ -915,6 +924,7 @@ enum TransactionType {
     TrustDebit,
     UniversalCredit,
     UniversalDebit,
+    Unknown,
     YtdAdjustmentCredit,
     YtdAdjustmentDebit,
     ZbaCredit,
@@ -926,656 +936,772 @@ enum TransactionType {
     ZbaFloatAdjustment,
 }
 
-impl Direction {
-    fn parse(type_code: &str) -> Option<Direction> {
+impl TransactionType {
+    fn parse(type_code: &str) -> (Direction, TransactionType) {
         match type_code.trim().replace("/", "").as_str() {
-            "100" => Some(Direction::Credit(TransactionType::TotalCredits)),
-            "101" => Some(Direction::Credit(TransactionType::TotalCreditAmountMtd)),
-            "105" => Some(Direction::Credit(TransactionType::CreditsNotDetailed)),
-            "106" => Some(Direction::Credit(TransactionType::DepositsSubjectToFloat)),
-            "107" => Some(Direction::Credit(
+            "100" => (Direction::Credit, TransactionType::TotalCredits),
+            "101" => (Direction::Credit, TransactionType::TotalCreditAmountMtd),
+            "105" => (Direction::Credit, TransactionType::CreditsNotDetailed),
+            "106" => (Direction::Credit, TransactionType::DepositsSubjectToFloat),
+            "107" => (
+                Direction::Credit,
                 TransactionType::TotalAdjustmentCreditsYtd,
-            )),
-            "108" => Some(Direction::Credit(TransactionType::Credit)),
-            "109" => Some(Direction::Credit(
+            ),
+            "108" => (Direction::Credit, TransactionType::Credit),
+            "109" => (
+                Direction::Credit,
                 TransactionType::CurrentDayTotalLockboxDeposits,
-            )),
-            "110" => Some(Direction::Credit(TransactionType::TotalLockboxDeposits)),
-            "115" => Some(Direction::Credit(TransactionType::LockboxDeposit)),
-            "116" => Some(Direction::Credit(TransactionType::ItemInLockboxDeposit)),
-            "118" => Some(Direction::Credit(TransactionType::LockboxAdjustmentCredit)),
-            "120" => Some(Direction::Credit(TransactionType::EdiTransactionCredit)),
-            "121" => Some(Direction::Credit(TransactionType::EdiTransactionCredit)),
-            "122" => Some(Direction::Credit(TransactionType::EdibanxCreditReceived)),
-            "123" => Some(Direction::Credit(TransactionType::EdibanxCreditReturn)),
-            "130" => Some(Direction::Credit(
+            ),
+            "110" => (Direction::Credit, TransactionType::TotalLockboxDeposits),
+            "115" => (Direction::Credit, TransactionType::LockboxDeposit),
+            "116" => (Direction::Credit, TransactionType::ItemInLockboxDeposit),
+            "118" => (Direction::Credit, TransactionType::LockboxAdjustmentCredit),
+            "120" => (Direction::Credit, TransactionType::EdiTransactionCredit),
+            "121" => (Direction::Credit, TransactionType::EdiTransactionCredit),
+            "122" => (Direction::Credit, TransactionType::EdibanxCreditReceived),
+            "123" => (Direction::Credit, TransactionType::EdibanxCreditReturn),
+            "130" => (
+                Direction::Credit,
                 TransactionType::TotalConcentrationCredits,
-            )),
-            "131" => Some(Direction::Credit(TransactionType::TotalDtcCredits)),
-            "135" => Some(Direction::Credit(TransactionType::DtcConcentrationCredit)),
-            "136" => Some(Direction::Credit(TransactionType::ItemInDtcDeposit)),
-            "140" => Some(Direction::Credit(TransactionType::TotalAchCredits)),
-            "142" => Some(Direction::Credit(TransactionType::AchCreditReceived)),
-            "143" => Some(Direction::Credit(TransactionType::ItemInAchDeposit)),
-            "145" => Some(Direction::Credit(TransactionType::AchConcentrationCredit)),
-            "146" => Some(Direction::Credit(TransactionType::TotalBankCardDeposits)),
-            "147" => Some(Direction::Credit(
+            ),
+            "131" => (Direction::Credit, TransactionType::TotalDtcCredits),
+            "135" => (Direction::Credit, TransactionType::DtcConcentrationCredit),
+            "136" => (Direction::Credit, TransactionType::ItemInDtcDeposit),
+            "140" => (Direction::Credit, TransactionType::TotalAchCredits),
+            "142" => (Direction::Credit, TransactionType::AchCreditReceived),
+            "143" => (Direction::Credit, TransactionType::ItemInAchDeposit),
+            "145" => (Direction::Credit, TransactionType::AchConcentrationCredit),
+            "146" => (Direction::Credit, TransactionType::TotalBankCardDeposits),
+            "147" => (
+                Direction::Credit,
                 TransactionType::IndividualBankCardDeposit,
-            )),
-            "150" => Some(Direction::Credit(
+            ),
+            "150" => (
+                Direction::Credit,
                 TransactionType::TotalPreauthorizedPaymentCredits,
-            )),
-            "155" => Some(Direction::Credit(TransactionType::PreauthorizedDraftCredit)),
-            "156" => Some(Direction::Credit(TransactionType::ItemInPacDeposit)),
-            "160" => Some(Direction::Credit(
+            ),
+            "155" => (Direction::Credit, TransactionType::PreauthorizedDraftCredit),
+            "156" => (Direction::Credit, TransactionType::ItemInPacDeposit),
+            "160" => (
+                Direction::Credit,
                 TransactionType::TotalAchDisbursingFundingCredits,
-            )),
-            "162" => Some(Direction::Credit(
+            ),
+            "162" => (
+                Direction::Credit,
                 TransactionType::CorporateTradePaymentSettlement,
-            )),
-            "163" => Some(Direction::Credit(
+            ),
+            "163" => (
+                Direction::Credit,
                 TransactionType::CorporateTradePaymentCredits,
-            )),
-            "164" => Some(Direction::Credit(
+            ),
+            "164" => (
+                Direction::Credit,
                 TransactionType::CorporateTradePaymentCredit,
-            )),
-            "165" => Some(Direction::Credit(TransactionType::PreauthorizedAchCredit)),
-            "166" => Some(Direction::Credit(TransactionType::AchSettlement)),
-            "167" => Some(Direction::Credit(TransactionType::AchSettlementCredits)),
-            "168" => Some(Direction::Credit(
+            ),
+            "165" => (Direction::Credit, TransactionType::PreauthorizedAchCredit),
+            "166" => (Direction::Credit, TransactionType::AchSettlement),
+            "167" => (Direction::Credit, TransactionType::AchSettlementCredits),
+            "168" => (
+                Direction::Credit,
                 TransactionType::AchReturnItemOrAdjustmentSettlement,
-            )),
-            "169" => Some(Direction::Credit(TransactionType::MiscellaneousAchCredit)),
-            "170" => Some(Direction::Credit(TransactionType::TotalOtherCheckDeposits)),
-            "171" => Some(Direction::Credit(TransactionType::IndividualLoanDeposit)),
-            "172" => Some(Direction::Credit(TransactionType::DepositCorrection)),
-            "173" => Some(Direction::Credit(TransactionType::BankPreparedDeposit)),
-            "174" => Some(Direction::Credit(TransactionType::OtherDeposit)),
-            "175" => Some(Direction::Credit(TransactionType::CheckDepositPackage)),
-            "176" => Some(Direction::Credit(TransactionType::RePresentedCheckDeposit)),
-            "178" => Some(Direction::Credit(TransactionType::ListPostCredits)),
-            "180" => Some(Direction::Credit(TransactionType::TotalLoanProceeds)),
-            "182" => Some(Direction::Credit(
+            ),
+            "169" => (Direction::Credit, TransactionType::MiscellaneousAchCredit),
+            "170" => (Direction::Credit, TransactionType::TotalOtherCheckDeposits),
+            "171" => (Direction::Credit, TransactionType::IndividualLoanDeposit),
+            "172" => (Direction::Credit, TransactionType::DepositCorrection),
+            "173" => (Direction::Credit, TransactionType::BankPreparedDeposit),
+            "174" => (Direction::Credit, TransactionType::OtherDeposit),
+            "175" => (Direction::Credit, TransactionType::CheckDepositPackage),
+            "176" => (Direction::Credit, TransactionType::RePresentedCheckDeposit),
+            "178" => (Direction::Credit, TransactionType::ListPostCredits),
+            "180" => (Direction::Credit, TransactionType::TotalLoanProceeds),
+            "182" => (
+                Direction::Credit,
                 TransactionType::TotalBankPreparedDeposits,
-            )),
-            "184" => Some(Direction::Credit(TransactionType::DraftDeposit)),
-            "185" => Some(Direction::Credit(
+            ),
+            "184" => (Direction::Credit, TransactionType::DraftDeposit),
+            "185" => (
+                Direction::Credit,
                 TransactionType::TotalMiscellaneousDeposits,
-            )),
-            "186" => Some(Direction::Credit(TransactionType::TotalCashLetterCredits)),
-            "187" => Some(Direction::Credit(TransactionType::CashLetterCredit)),
-            "188" => Some(Direction::Credit(
+            ),
+            "186" => (Direction::Credit, TransactionType::TotalCashLetterCredits),
+            "187" => (Direction::Credit, TransactionType::CashLetterCredit),
+            "188" => (
+                Direction::Credit,
                 TransactionType::TotalCashLetterAdjustments,
-            )),
-            "189" => Some(Direction::Credit(TransactionType::CashLetterAdjustment)),
-            "190" => Some(Direction::Credit(
+            ),
+            "189" => (Direction::Credit, TransactionType::CashLetterAdjustment),
+            "190" => (
+                Direction::Credit,
                 TransactionType::TotalIncomingMoneyTransfers,
-            )),
-            "191" => Some(Direction::Credit(
+            ),
+            "191" => (
+                Direction::Credit,
                 TransactionType::IndividualIncomingInternalMoneyTransfer,
-            )),
-            "195" => Some(Direction::Credit(TransactionType::IncomingMoneyTransfer)),
-            "196" => Some(Direction::Credit(TransactionType::MoneyTransferAdjustment)),
-            "198" => Some(Direction::Credit(TransactionType::Compensation)),
-            "200" => Some(Direction::Credit(
+            ),
+            "195" => (Direction::Credit, TransactionType::IncomingMoneyTransfer),
+            "196" => (Direction::Credit, TransactionType::MoneyTransferAdjustment),
+            "198" => (Direction::Credit, TransactionType::Compensation),
+            "200" => (
+                Direction::Credit,
                 TransactionType::TotalAutomaticTransferCredits,
-            )),
-            "201" => Some(Direction::Credit(
+            ),
+            "201" => (
+                Direction::Credit,
                 TransactionType::IndividualAutomaticTransferCredit,
-            )),
-            "202" => Some(Direction::Credit(TransactionType::BondOperationsCredit)),
-            "205" => Some(Direction::Credit(TransactionType::TotalBookTransferCredits)),
-            "206" => Some(Direction::Credit(TransactionType::BookTransferCredit)),
-            "207" => Some(Direction::Credit(
+            ),
+            "202" => (Direction::Credit, TransactionType::BondOperationsCredit),
+            "205" => (Direction::Credit, TransactionType::TotalBookTransferCredits),
+            "206" => (Direction::Credit, TransactionType::BookTransferCredit),
+            "207" => (
+                Direction::Credit,
                 TransactionType::TotalInternationalMoneyTransferCredits,
-            )),
-            "208" => Some(Direction::Credit(
+            ),
+            "208" => (
+                Direction::Credit,
                 TransactionType::IndividualInternationalMoneyTransferCredit,
-            )),
-            "210" => Some(Direction::Credit(
+            ),
+            "210" => (
+                Direction::Credit,
                 TransactionType::TotalInternationalCredits,
-            )),
-            "212" => Some(Direction::Credit(TransactionType::ForeignLetterOfCredit)),
-            "213" => Some(Direction::Credit(TransactionType::LetterOfCredit)),
-            "214" => Some(Direction::Credit(TransactionType::ForeignExchangeOfCredit)),
-            "215" => Some(Direction::Credit(TransactionType::TotalLettersOfCredit)),
-            "216" => Some(Direction::Credit(TransactionType::ForeignRemittanceCredit)),
-            "218" => Some(Direction::Credit(TransactionType::ForeignCollectionCredit)),
-            "221" => Some(Direction::Credit(TransactionType::ForeignCheckPurchase)),
-            "222" => Some(Direction::Credit(TransactionType::ForeignChecksDeposited)),
-            "224" => Some(Direction::Credit(TransactionType::Commission)),
-            "226" => Some(Direction::Credit(
+            ),
+            "212" => (Direction::Credit, TransactionType::ForeignLetterOfCredit),
+            "213" => (Direction::Credit, TransactionType::LetterOfCredit),
+            "214" => (Direction::Credit, TransactionType::ForeignExchangeOfCredit),
+            "215" => (Direction::Credit, TransactionType::TotalLettersOfCredit),
+            "216" => (Direction::Credit, TransactionType::ForeignRemittanceCredit),
+            "218" => (Direction::Credit, TransactionType::ForeignCollectionCredit),
+            "221" => (Direction::Credit, TransactionType::ForeignCheckPurchase),
+            "222" => (Direction::Credit, TransactionType::ForeignChecksDeposited),
+            "224" => (Direction::Credit, TransactionType::Commission),
+            "226" => (
+                Direction::Credit,
                 TransactionType::InternationalMoneyMarketTrading,
-            )),
-            "227" => Some(Direction::Credit(TransactionType::StandingOrder)),
-            "229" => Some(Direction::Credit(
+            ),
+            "227" => (Direction::Credit, TransactionType::StandingOrder),
+            "229" => (
+                Direction::Credit,
                 TransactionType::MiscellaneousInternationalCredit,
-            )),
-            "230" => Some(Direction::Credit(TransactionType::TotalSecurityCredits)),
-            "231" => Some(Direction::Credit(TransactionType::TotalCollectionCredits)),
-            "232" => Some(Direction::Credit(TransactionType::SaleOfDebtSecurity)),
-            "233" => Some(Direction::Credit(TransactionType::SecuritiesSold)),
-            "234" => Some(Direction::Credit(TransactionType::SaleOfEquitySecurity)),
-            "235" => Some(Direction::Credit(
+            ),
+            "230" => (Direction::Credit, TransactionType::TotalSecurityCredits),
+            "231" => (Direction::Credit, TransactionType::TotalCollectionCredits),
+            "232" => (Direction::Credit, TransactionType::SaleOfDebtSecurity),
+            "233" => (Direction::Credit, TransactionType::SecuritiesSold),
+            "234" => (Direction::Credit, TransactionType::SaleOfEquitySecurity),
+            "235" => (
+                Direction::Credit,
                 TransactionType::MaturedReverseRepurchaseOrder,
-            )),
-            "236" => Some(Direction::Credit(TransactionType::MaturityOfDebtSecurity)),
-            "237" => Some(Direction::Credit(
+            ),
+            "236" => (Direction::Credit, TransactionType::MaturityOfDebtSecurity),
+            "237" => (
+                Direction::Credit,
                 TransactionType::IndividualCollectionCredit,
-            )),
-            "238" => Some(Direction::Credit(TransactionType::CollectionOfDividends)),
-            "239" => Some(Direction::Credit(
+            ),
+            "238" => (Direction::Credit, TransactionType::CollectionOfDividends),
+            "239" => (
+                Direction::Credit,
                 TransactionType::TotalBankersAcceptanceCredits,
-            )),
-            "240" => Some(Direction::Credit(TransactionType::CouponCollectionsBanks)),
-            "241" => Some(Direction::Credit(TransactionType::BankersAcceptances)),
-            "242" => Some(Direction::Credit(
+            ),
+            "240" => (Direction::Credit, TransactionType::CouponCollectionsBanks),
+            "241" => (Direction::Credit, TransactionType::BankersAcceptances),
+            "242" => (
+                Direction::Credit,
                 TransactionType::CollectionOfInterestIncome,
-            )),
-            "243" => Some(Direction::Credit(TransactionType::MaturedFedFundsPurchased)),
-            "244" => Some(Direction::Credit(
+            ),
+            "243" => (Direction::Credit, TransactionType::MaturedFedFundsPurchased),
+            "244" => (
+                Direction::Credit,
                 TransactionType::InterestMaturedPrincipalPayment,
-            )),
-            "245" => Some(Direction::Credit(TransactionType::MonthlyDividends)),
-            "246" => Some(Direction::Credit(TransactionType::CommercialPaper)),
-            "247" => Some(Direction::Credit(TransactionType::CapitalChange)),
-            "248" => Some(Direction::Credit(
+            ),
+            "245" => (Direction::Credit, TransactionType::MonthlyDividends),
+            "246" => (Direction::Credit, TransactionType::CommercialPaper),
+            "247" => (Direction::Credit, TransactionType::CapitalChange),
+            "248" => (
+                Direction::Credit,
                 TransactionType::SavingsBondsSalesAdjustment,
-            )),
-            "249" => Some(Direction::Credit(
+            ),
+            "249" => (
+                Direction::Credit,
                 TransactionType::MiscellaneousSecurityCredit,
-            )),
-            "250" => Some(Direction::Credit(
+            ),
+            "250" => (
+                Direction::Credit,
                 TransactionType::TotalChecksPostedAndReturned,
-            )),
-            "251" => Some(Direction::Credit(TransactionType::TotalDebitReversals)),
-            "252" => Some(Direction::Credit(TransactionType::DebitReversal)),
-            "254" => Some(Direction::Credit(
+            ),
+            "251" => (Direction::Credit, TransactionType::TotalDebitReversals),
+            "252" => (Direction::Credit, TransactionType::DebitReversal),
+            "254" => (
+                Direction::Credit,
                 TransactionType::PostingErrorCorrectionCredit,
-            )),
-            "255" => Some(Direction::Credit(TransactionType::CheckPostedAndReturned)),
-            "256" => Some(Direction::Credit(TransactionType::TotalAchReturnItems)),
-            "257" => Some(Direction::Credit(TransactionType::IndividualAchReturnItem)),
-            "258" => Some(Direction::Credit(TransactionType::AchReversalCredit)),
-            "260" => Some(Direction::Credit(TransactionType::TotalRejectedCredits)),
-            "261" => Some(Direction::Credit(TransactionType::IndividualRejectedCredit)),
-            "263" => Some(Direction::Credit(TransactionType::Overdraft)),
-            "266" => Some(Direction::Credit(TransactionType::ReturnItem)),
-            "268" => Some(Direction::Credit(TransactionType::ReturnItemAdjustment)),
-            "270" => Some(Direction::Credit(TransactionType::TotalZbaCredits)),
-            "271" => Some(Direction::Credit(TransactionType::NetZeroBalanceAmount)),
-            "274" => Some(Direction::Credit(
+            ),
+            "255" => (Direction::Credit, TransactionType::CheckPostedAndReturned),
+            "256" => (Direction::Credit, TransactionType::TotalAchReturnItems),
+            "257" => (Direction::Credit, TransactionType::IndividualAchReturnItem),
+            "258" => (Direction::Credit, TransactionType::AchReversalCredit),
+            "260" => (Direction::Credit, TransactionType::TotalRejectedCredits),
+            "261" => (Direction::Credit, TransactionType::IndividualRejectedCredit),
+            "263" => (Direction::Credit, TransactionType::Overdraft),
+            "266" => (Direction::Credit, TransactionType::ReturnItem),
+            "268" => (Direction::Credit, TransactionType::ReturnItemAdjustment),
+            "270" => (Direction::Credit, TransactionType::TotalZbaCredits),
+            "271" => (Direction::Credit, TransactionType::NetZeroBalanceAmount),
+            "274" => (
+                Direction::Credit,
                 TransactionType::CumulativeZbaOrDisbursementCredits,
-            )),
-            "275" => Some(Direction::Credit(TransactionType::ZbaCredit)),
-            "276" => Some(Direction::Credit(TransactionType::ZbaFloatAdjustment)),
-            "277" => Some(Direction::Credit(TransactionType::ZbaCreditTransfer)),
-            "278" => Some(Direction::Credit(TransactionType::ZbaCreditAdjustment)),
-            "280" => Some(Direction::Credit(
+            ),
+            "275" => (Direction::Credit, TransactionType::ZbaCredit),
+            "276" => (Direction::Credit, TransactionType::ZbaFloatAdjustment),
+            "277" => (Direction::Credit, TransactionType::ZbaCreditTransfer),
+            "278" => (Direction::Credit, TransactionType::ZbaCreditAdjustment),
+            "280" => (
+                Direction::Credit,
                 TransactionType::TotalControlledDisbursingCredits,
-            )),
-            "281" => Some(Direction::Credit(
+            ),
+            "281" => (
+                Direction::Credit,
                 TransactionType::IndividualControlledDisbursingCredit,
-            )),
-            "285" => Some(Direction::Credit(
+            ),
+            "285" => (
+                Direction::Credit,
                 TransactionType::TotalDtcDisbursingCredits,
-            )),
-            "286" => Some(Direction::Credit(
+            ),
+            "286" => (
+                Direction::Credit,
                 TransactionType::IndividualDtcDisbursingCredit,
-            )),
-            "294" => Some(Direction::Credit(TransactionType::TotalAtmCredits)),
-            "295" => Some(Direction::Credit(TransactionType::AtmCredit)),
-            "301" => Some(Direction::Credit(TransactionType::CommercialDeposit)),
-            "302" => Some(Direction::Credit(TransactionType::CorrespondentBankDeposit)),
-            "303" => Some(Direction::Credit(TransactionType::TotalWireTransfersInFF)),
-            "304" => Some(Direction::Credit(TransactionType::TotalWireTransfersInCHF)),
-            "305" => Some(Direction::Credit(TransactionType::TotalFedFundsSold)),
-            "306" => Some(Direction::Credit(TransactionType::FedFundsSold)),
-            "307" => Some(Direction::Credit(TransactionType::TotalTrustCredits)),
-            "308" => Some(Direction::Credit(TransactionType::TrustCredit)),
-            "309" => Some(Direction::Credit(TransactionType::TotalValueDatedFunds)),
-            "310" => Some(Direction::Credit(TransactionType::TotalCommercialDeposits)),
-            "315" => Some(Direction::Credit(
+            ),
+            "294" => (Direction::Credit, TransactionType::TotalAtmCredits),
+            "295" => (Direction::Credit, TransactionType::AtmCredit),
+            "301" => (Direction::Credit, TransactionType::CommercialDeposit),
+            "302" => (Direction::Credit, TransactionType::CorrespondentBankDeposit),
+            "303" => (Direction::Credit, TransactionType::TotalWireTransfersInFF),
+            "304" => (Direction::Credit, TransactionType::TotalWireTransfersInCHF),
+            "305" => (Direction::Credit, TransactionType::TotalFedFundsSold),
+            "306" => (Direction::Credit, TransactionType::FedFundsSold),
+            "307" => (Direction::Credit, TransactionType::TotalTrustCredits),
+            "308" => (Direction::Credit, TransactionType::TrustCredit),
+            "309" => (Direction::Credit, TransactionType::TotalValueDatedFunds),
+            "310" => (Direction::Credit, TransactionType::TotalCommercialDeposits),
+            "315" => (
+                Direction::Credit,
                 TransactionType::TotalInternationalCreditsFf,
-            )),
-            "316" => Some(Direction::Credit(
+            ),
+            "316" => (
+                Direction::Credit,
                 TransactionType::TotalInternationalCreditsChf,
-            )),
-            "318" => Some(Direction::Credit(
+            ),
+            "318" => (
+                Direction::Credit,
                 TransactionType::TotalForeignCheckPurchased,
-            )),
-            "319" => Some(Direction::Credit(TransactionType::LateDeposit)),
-            "320" => Some(Direction::Credit(TransactionType::TotalSecuritiesSoldFf)),
-            "321" => Some(Direction::Credit(TransactionType::TotalSecuritiesSoldChf)),
-            "324" => Some(Direction::Credit(TransactionType::TotalSecuritiesMaturedFf)),
-            "325" => Some(Direction::Credit(
+            ),
+            "319" => (Direction::Credit, TransactionType::LateDeposit),
+            "320" => (Direction::Credit, TransactionType::TotalSecuritiesSoldFf),
+            "321" => (Direction::Credit, TransactionType::TotalSecuritiesSoldChf),
+            "324" => (Direction::Credit, TransactionType::TotalSecuritiesMaturedFf),
+            "325" => (
+                Direction::Credit,
                 TransactionType::TotalSecuritiesMaturedChf,
-            )),
-            "326" => Some(Direction::Credit(TransactionType::TotalSecuritiesInterest)),
-            "327" => Some(Direction::Credit(TransactionType::TotalSecuritiesMatured)),
-            "328" => Some(Direction::Credit(
+            ),
+            "326" => (Direction::Credit, TransactionType::TotalSecuritiesInterest),
+            "327" => (Direction::Credit, TransactionType::TotalSecuritiesMatured),
+            "328" => (
+                Direction::Credit,
                 TransactionType::TotalSecuritiesInterestFf,
-            )),
-            "329" => Some(Direction::Credit(
+            ),
+            "329" => (
+                Direction::Credit,
                 TransactionType::TotalSecuritiesInterestChf,
-            )),
-            "330" => Some(Direction::Credit(TransactionType::TotalEscrowCredits)),
-            "331" => Some(Direction::Credit(TransactionType::IndividualEscrowCredit)),
-            "332" => Some(Direction::Credit(
+            ),
+            "330" => (Direction::Credit, TransactionType::TotalEscrowCredits),
+            "331" => (Direction::Credit, TransactionType::IndividualEscrowCredit),
+            "332" => (
+                Direction::Credit,
                 TransactionType::TotalMiscellaneousSecuritiesCreditsFf,
-            )),
-            "336" => Some(Direction::Credit(
+            ),
+            "336" => (
+                Direction::Credit,
                 TransactionType::TotalMiscellaneousSecuritiesCreditsChf,
-            )),
-            "338" => Some(Direction::Credit(TransactionType::TotalSecuritiesSold)),
-            "340" => Some(Direction::Credit(TransactionType::TotalBrokerDeposits)),
-            "341" => Some(Direction::Credit(TransactionType::TotalBrokerDepositsFf)),
-            "342" => Some(Direction::Credit(TransactionType::BrokerDeposit)),
-            "343" => Some(Direction::Credit(TransactionType::TotalBrokerDepositsChf)),
-            "344" => Some(Direction::Credit(
+            ),
+            "338" => (Direction::Credit, TransactionType::TotalSecuritiesSold),
+            "340" => (Direction::Credit, TransactionType::TotalBrokerDeposits),
+            "341" => (Direction::Credit, TransactionType::TotalBrokerDepositsFf),
+            "342" => (Direction::Credit, TransactionType::BrokerDeposit),
+            "343" => (Direction::Credit, TransactionType::TotalBrokerDepositsChf),
+            "344" => (
+                Direction::Credit,
                 TransactionType::IndividualBackValueCredit,
-            )),
-            "345" => Some(Direction::Credit(TransactionType::ItemInBrokersDeposit)),
-            "346" => Some(Direction::Credit(TransactionType::SweepInterestIncome)),
-            "347" => Some(Direction::Credit(TransactionType::SweepPrincipalSell)),
-            "348" => Some(Direction::Credit(TransactionType::FuturesCredit)),
-            "349" => Some(Direction::Credit(TransactionType::PrincipalPaymentsCredit)),
-            "350" => Some(Direction::Credit(TransactionType::InvestmentSold)),
-            "351" => Some(Direction::Credit(TransactionType::IndividualInvestmentSold)),
-            "352" => Some(Direction::Credit(TransactionType::TotalCashCenterCredits)),
-            "353" => Some(Direction::Credit(TransactionType::CashCenterCredit)),
-            "354" => Some(Direction::Credit(TransactionType::InterestCredit)),
-            "355" => Some(Direction::Credit(TransactionType::InvestmentInterest)),
-            "356" => Some(Direction::Credit(TransactionType::TotalCreditAdjustment)),
-            "357" => Some(Direction::Credit(TransactionType::CreditAdjustment)),
-            "358" => Some(Direction::Credit(TransactionType::YtdAdjustmentCredit)),
-            "359" => Some(Direction::Credit(TransactionType::InterestAdjustmentCredit)),
-            "360" => Some(Direction::Credit(
+            ),
+            "345" => (Direction::Credit, TransactionType::ItemInBrokersDeposit),
+            "346" => (Direction::Credit, TransactionType::SweepInterestIncome),
+            "347" => (Direction::Credit, TransactionType::SweepPrincipalSell),
+            "348" => (Direction::Credit, TransactionType::FuturesCredit),
+            "349" => (Direction::Credit, TransactionType::PrincipalPaymentsCredit),
+            "350" => (Direction::Credit, TransactionType::InvestmentSold),
+            "351" => (Direction::Credit, TransactionType::IndividualInvestmentSold),
+            "352" => (Direction::Credit, TransactionType::TotalCashCenterCredits),
+            "353" => (Direction::Credit, TransactionType::CashCenterCredit),
+            "354" => (Direction::Credit, TransactionType::InterestCredit),
+            "355" => (Direction::Credit, TransactionType::InvestmentInterest),
+            "356" => (Direction::Credit, TransactionType::TotalCreditAdjustment),
+            "357" => (Direction::Credit, TransactionType::CreditAdjustment),
+            "358" => (Direction::Credit, TransactionType::YtdAdjustmentCredit),
+            "359" => (Direction::Credit, TransactionType::InterestAdjustmentCredit),
+            "360" => (
+                Direction::Credit,
                 TransactionType::TotalCreditsLessWireTransferAndReturnedChecks,
-            )),
-            "361" => Some(Direction::Credit(
+            ),
+            "361" => (
+                Direction::Credit,
                 TransactionType::GrandTotalCreditsLessGrandTotalDebits,
-            )),
-            "362" => Some(Direction::Credit(TransactionType::CorrespondentCollection)),
-            "363" => Some(Direction::Credit(
+            ),
+            "362" => (Direction::Credit, TransactionType::CorrespondentCollection),
+            "363" => (
+                Direction::Credit,
                 TransactionType::CorrespondentCollectionAdjustment,
-            )),
-            "364" => Some(Direction::Credit(TransactionType::LoanParticipation)),
-            "366" => Some(Direction::Credit(TransactionType::CurrencyAndCoinDeposited)),
-            "367" => Some(Direction::Credit(TransactionType::FoodStampLetter)),
-            "368" => Some(Direction::Credit(TransactionType::FoodStampAdjustment)),
-            "369" => Some(Direction::Credit(TransactionType::ClearingSettlementCredit)),
-            "370" => Some(Direction::Credit(TransactionType::TotalBackValueCredits)),
-            "372" => Some(Direction::Credit(TransactionType::BackValueAdjustment)),
-            "373" => Some(Direction::Credit(TransactionType::CustomerPayroll)),
-            "374" => Some(Direction::Credit(TransactionType::FrbStatementRecap)),
-            "376" => Some(Direction::Credit(
+            ),
+            "364" => (Direction::Credit, TransactionType::LoanParticipation),
+            "366" => (Direction::Credit, TransactionType::CurrencyAndCoinDeposited),
+            "367" => (Direction::Credit, TransactionType::FoodStampLetter),
+            "368" => (Direction::Credit, TransactionType::FoodStampAdjustment),
+            "369" => (Direction::Credit, TransactionType::ClearingSettlementCredit),
+            "370" => (Direction::Credit, TransactionType::TotalBackValueCredits),
+            "372" => (Direction::Credit, TransactionType::BackValueAdjustment),
+            "373" => (Direction::Credit, TransactionType::CustomerPayroll),
+            "374" => (Direction::Credit, TransactionType::FrbStatementRecap),
+            "376" => (
+                Direction::Credit,
                 TransactionType::SavingsBondLetterOrAdjustment,
-            )),
-            "377" => Some(Direction::Credit(TransactionType::TreasuryTaxAndLoanCredit)),
-            "378" => Some(Direction::Credit(TransactionType::TransferOfTreasuryCredit)),
-            "379" => Some(Direction::Credit(
+            ),
+            "377" => (Direction::Credit, TransactionType::TreasuryTaxAndLoanCredit),
+            "378" => (Direction::Credit, TransactionType::TransferOfTreasuryCredit),
+            "379" => (
+                Direction::Credit,
                 TransactionType::FrbGovernmentChecksCashLetterCredit,
-            )),
-            "381" => Some(Direction::Credit(
+            ),
+            "381" => (
+                Direction::Credit,
                 TransactionType::FrbGovernmentCheckAdjustment,
-            )),
-            "382" => Some(Direction::Credit(
+            ),
+            "382" => (
+                Direction::Credit,
                 TransactionType::FrbPostalMoneyOrderCredit,
-            )),
-            "383" => Some(Direction::Credit(
+            ),
+            "383" => (
+                Direction::Credit,
                 TransactionType::FrbPostalMoneyOrderAdjustment,
-            )),
-            "384" => Some(Direction::Credit(
+            ),
+            "384" => (
+                Direction::Credit,
                 TransactionType::FrbCashLetterAutoChargeCredit,
-            )),
-            "385" => Some(Direction::Credit(TransactionType::TotalUniversalCredits)),
-            "386" => Some(Direction::Credit(
+            ),
+            "385" => (Direction::Credit, TransactionType::TotalUniversalCredits),
+            "386" => (
+                Direction::Credit,
                 TransactionType::FrbCashLetterAutoChargeAdjustment,
-            )),
-            "387" => Some(Direction::Credit(
+            ),
+            "387" => (
+                Direction::Credit,
                 TransactionType::FrbFineSortCashLetterCredit,
-            )),
-            "388" => Some(Direction::Credit(TransactionType::FrbFineSortAdjustment)),
-            "389" => Some(Direction::Credit(
+            ),
+            "388" => (Direction::Credit, TransactionType::FrbFineSortAdjustment),
+            "389" => (
+                Direction::Credit,
                 TransactionType::TotalFreightPaymentCredits,
-            )),
-            "390" => Some(Direction::Credit(
+            ),
+            "390" => (
+                Direction::Credit,
                 TransactionType::TotalMiscellaneousCredits,
-            )),
-            "391" => Some(Direction::Credit(TransactionType::UniversalCredit)),
-            "392" => Some(Direction::Credit(TransactionType::FreightPaymentCredit)),
-            "393" => Some(Direction::Credit(TransactionType::ItemizedCreditOver10000)),
-            "394" => Some(Direction::Credit(TransactionType::CumulativeCredits)),
-            "395" => Some(Direction::Credit(TransactionType::CheckReversal)),
-            "397" => Some(Direction::Credit(TransactionType::FloatAdjustment)),
-            "398" => Some(Direction::Credit(TransactionType::MiscellaneousFeeRefund)),
-            "399" => Some(Direction::Credit(TransactionType::MiscellaneousCredit)),
-            "401" => Some(Direction::Debit(TransactionType::TotalDebitAmountMtd)),
-            "403" => Some(Direction::Debit(TransactionType::TodaysTotalDebits)),
-            "405" => Some(Direction::Debit(
+            ),
+            "391" => (Direction::Credit, TransactionType::UniversalCredit),
+            "392" => (Direction::Credit, TransactionType::FreightPaymentCredit),
+            "393" => (Direction::Credit, TransactionType::ItemizedCreditOver10000),
+            "394" => (Direction::Credit, TransactionType::CumulativeCredits),
+            "395" => (Direction::Credit, TransactionType::CheckReversal),
+            "397" => (Direction::Credit, TransactionType::FloatAdjustment),
+            "398" => (Direction::Credit, TransactionType::MiscellaneousFeeRefund),
+            "399" => (Direction::Credit, TransactionType::MiscellaneousCredit),
+            "401" => (Direction::Debit, TransactionType::TotalDebitAmountMtd),
+            "403" => (Direction::Debit, TransactionType::TodaysTotalDebits),
+            "405" => (
+                Direction::Debit,
                 TransactionType::TotalDebitLessWireTransfersAndChargeBacks,
-            )),
-            "406" => Some(Direction::Debit(TransactionType::DebitsNotDetailed)),
-            "408" => Some(Direction::Debit(TransactionType::FloatAdjustment)),
-            "409" => Some(Direction::Debit(TransactionType::DebitAnyType)),
-            "410" => Some(Direction::Debit(TransactionType::TotalYtdAdjustment)),
-            "412" => Some(Direction::Debit(
+            ),
+            "406" => (Direction::Debit, TransactionType::DebitsNotDetailed),
+            "408" => (Direction::Debit, TransactionType::FloatAdjustment),
+            "409" => (Direction::Debit, TransactionType::DebitAnyType),
+            "410" => (Direction::Debit, TransactionType::TotalYtdAdjustment),
+            "412" => (
+                Direction::Debit,
                 TransactionType::TotalDebitsExcludingReturnedItems,
-            )),
-            "415" => Some(Direction::Debit(TransactionType::LockboxDebit)),
-            "416" => Some(Direction::Debit(TransactionType::TotalLockboxDebits)),
-            "420" => Some(Direction::Debit(TransactionType::EdiTransactionDebits)),
-            "421" => Some(Direction::Debit(TransactionType::EdiTransactionDebit)),
-            "422" => Some(Direction::Debit(TransactionType::EdibanxSettlementDebit)),
-            "423" => Some(Direction::Debit(TransactionType::EdibanxReturnItemDebit)),
-            "430" => Some(Direction::Debit(TransactionType::TotalPayableThroughDrafts)),
-            "435" => Some(Direction::Debit(TransactionType::PayableThroughDraft)),
-            "445" => Some(Direction::Debit(TransactionType::AchConcentrationDebit)),
-            "446" => Some(Direction::Debit(
+            ),
+            "415" => (Direction::Debit, TransactionType::LockboxDebit),
+            "416" => (Direction::Debit, TransactionType::TotalLockboxDebits),
+            "420" => (Direction::Debit, TransactionType::EdiTransactionDebits),
+            "421" => (Direction::Debit, TransactionType::EdiTransactionDebit),
+            "422" => (Direction::Debit, TransactionType::EdibanxSettlementDebit),
+            "423" => (Direction::Debit, TransactionType::EdibanxReturnItemDebit),
+            "430" => (Direction::Debit, TransactionType::TotalPayableThroughDrafts),
+            "435" => (Direction::Debit, TransactionType::PayableThroughDraft),
+            "445" => (Direction::Debit, TransactionType::AchConcentrationDebit),
+            "446" => (
+                Direction::Debit,
                 TransactionType::TotalAchDisbursementFundingDebits,
-            )),
-            "447" => Some(Direction::Debit(
+            ),
+            "447" => (
+                Direction::Debit,
                 TransactionType::AchDisbursementFundingDebit,
-            )),
-            "450" => Some(Direction::Debit(TransactionType::TotalAchDebits)),
-            "451" => Some(Direction::Debit(TransactionType::AchDebitReceived)),
-            "452" => Some(Direction::Debit(
+            ),
+            "450" => (Direction::Debit, TransactionType::TotalAchDebits),
+            "451" => (Direction::Debit, TransactionType::AchDebitReceived),
+            "452" => (
+                Direction::Debit,
                 TransactionType::ItemInAchDisbursementOrDebit,
-            )),
-            "455" => Some(Direction::Debit(TransactionType::PreauthorizedAchDebit)),
-            "462" => Some(Direction::Debit(
+            ),
+            "455" => (Direction::Debit, TransactionType::PreauthorizedAchDebit),
+            "462" => (
+                Direction::Debit,
                 TransactionType::AccountHolderInitiatedAchDebit,
-            )),
-            "463" => Some(Direction::Debit(
+            ),
+            "463" => (
+                Direction::Debit,
                 TransactionType::CorporateTradePaymentDebits,
-            )),
-            "464" => Some(Direction::Debit(
+            ),
+            "464" => (
+                Direction::Debit,
                 TransactionType::CorporateTradePaymentDebit,
-            )),
-            "465" => Some(Direction::Debit(
+            ),
+            "465" => (
+                Direction::Debit,
                 TransactionType::CorporateTradePaymentSettlement,
-            )),
-            "466" => Some(Direction::Debit(TransactionType::AchSettlement)),
-            "467" => Some(Direction::Debit(TransactionType::AchSettlementDebits)),
-            "468" => Some(Direction::Debit(
+            ),
+            "466" => (Direction::Debit, TransactionType::AchSettlement),
+            "467" => (Direction::Debit, TransactionType::AchSettlementDebits),
+            "468" => (
+                Direction::Debit,
                 TransactionType::AchReturnItemOrAdjustmentSettlement,
-            )),
-            "469" => Some(Direction::Debit(TransactionType::MiscellaneousAchDebit)),
-            "470" => Some(Direction::Debit(TransactionType::TotalCheckPaid)),
-            "471" => Some(Direction::Debit(
+            ),
+            "469" => (Direction::Debit, TransactionType::MiscellaneousAchDebit),
+            "470" => (Direction::Debit, TransactionType::TotalCheckPaid),
+            "471" => (
+                Direction::Debit,
                 TransactionType::TotalCheckPaidCumulativeMtd,
-            )),
-            "472" => Some(Direction::Debit(TransactionType::CumulativeChecksPaid)),
-            "474" => Some(Direction::Debit(TransactionType::CertifiedCheckDebit)),
-            "475" => Some(Direction::Debit(TransactionType::CheckPaid)),
-            "476" => Some(Direction::Debit(
+            ),
+            "472" => (Direction::Debit, TransactionType::CumulativeChecksPaid),
+            "474" => (Direction::Debit, TransactionType::CertifiedCheckDebit),
+            "475" => (Direction::Debit, TransactionType::CheckPaid),
+            "476" => (
+                Direction::Debit,
                 TransactionType::FederalReserveBankLetterDebit,
-            )),
-            "477" => Some(Direction::Debit(TransactionType::BankOriginatedDebit)),
-            "478" => Some(Direction::Debit(TransactionType::ListPostDebits)),
-            "479" => Some(Direction::Debit(TransactionType::ListPostDebit)),
-            "480" => Some(Direction::Debit(TransactionType::TotalLoanPayments)),
-            "481" => Some(Direction::Debit(TransactionType::IndividualLoanPayment)),
-            "482" => Some(Direction::Debit(TransactionType::TotalBankOriginatedDebits)),
-            "484" => Some(Direction::Debit(TransactionType::Draft)),
-            "485" => Some(Direction::Debit(TransactionType::DtcDebit)),
-            "486" => Some(Direction::Debit(TransactionType::TotalCashLetterDebits)),
-            "487" => Some(Direction::Debit(TransactionType::CashLetterDebit)),
-            "489" => Some(Direction::Debit(TransactionType::CashLetterAdjustment)),
-            "490" => Some(Direction::Debit(
+            ),
+            "477" => (Direction::Debit, TransactionType::BankOriginatedDebit),
+            "478" => (Direction::Debit, TransactionType::ListPostDebits),
+            "479" => (Direction::Debit, TransactionType::ListPostDebit),
+            "480" => (Direction::Debit, TransactionType::TotalLoanPayments),
+            "481" => (Direction::Debit, TransactionType::IndividualLoanPayment),
+            "482" => (Direction::Debit, TransactionType::TotalBankOriginatedDebits),
+            "484" => (Direction::Debit, TransactionType::Draft),
+            "485" => (Direction::Debit, TransactionType::DtcDebit),
+            "486" => (Direction::Debit, TransactionType::TotalCashLetterDebits),
+            "487" => (Direction::Debit, TransactionType::CashLetterDebit),
+            "489" => (Direction::Debit, TransactionType::CashLetterAdjustment),
+            "490" => (
+                Direction::Debit,
                 TransactionType::TotalOutgoingMoneyTransfers,
-            )),
-            "491" => Some(Direction::Debit(
+            ),
+            "491" => (
+                Direction::Debit,
                 TransactionType::IndividualOutgoingInternalMoneyTransfer,
-            )),
-            "493" => Some(Direction::Debit(
+            ),
+            "493" => (
+                Direction::Debit,
                 TransactionType::CustomerTerminalInitiatedMoneyTransfer,
-            )),
-            "495" => Some(Direction::Debit(TransactionType::OutgoingMoneyTransfer)),
-            "496" => Some(Direction::Debit(TransactionType::MoneyTransferAdjustment)),
-            "498" => Some(Direction::Debit(TransactionType::Compensation)),
-            "500" => Some(Direction::Debit(
+            ),
+            "495" => (Direction::Debit, TransactionType::OutgoingMoneyTransfer),
+            "496" => (Direction::Debit, TransactionType::MoneyTransferAdjustment),
+            "498" => (Direction::Debit, TransactionType::Compensation),
+            "500" => (
+                Direction::Debit,
                 TransactionType::TotalAutomaticTransferDebits,
-            )),
-            "501" => Some(Direction::Debit(
+            ),
+            "501" => (
+                Direction::Debit,
                 TransactionType::IndividualAutomaticTransferDebit,
-            )),
-            "502" => Some(Direction::Debit(TransactionType::BondOperationsDebit)),
-            "505" => Some(Direction::Debit(TransactionType::TotalBookTransferDebits)),
-            "506" => Some(Direction::Debit(TransactionType::BookTransferDebit)),
-            "507" => Some(Direction::Debit(
+            ),
+            "502" => (Direction::Debit, TransactionType::BondOperationsDebit),
+            "505" => (Direction::Debit, TransactionType::TotalBookTransferDebits),
+            "506" => (Direction::Debit, TransactionType::BookTransferDebit),
+            "507" => (
+                Direction::Debit,
                 TransactionType::TotalInternationalMoneyTransferDebits,
-            )),
-            "508" => Some(Direction::Debit(
+            ),
+            "508" => (
+                Direction::Debit,
                 TransactionType::IndividualInternationalMoneyTransferDebits,
-            )),
-            "510" => Some(Direction::Debit(TransactionType::TotalInternationalDebits)),
-            "512" => Some(Direction::Debit(TransactionType::LetterOfCreditDebit)),
-            "513" => Some(Direction::Debit(TransactionType::LetterOfCredit)),
-            "514" => Some(Direction::Debit(TransactionType::ForeignExchangeDebit)),
-            "515" => Some(Direction::Debit(TransactionType::TotalLettersOfCredit)),
-            "516" => Some(Direction::Debit(TransactionType::ForeignRemittanceDebit)),
-            "518" => Some(Direction::Debit(TransactionType::ForeignCollectionDebit)),
-            "522" => Some(Direction::Debit(TransactionType::ForeignChecksPaid)),
-            "524" => Some(Direction::Debit(TransactionType::Commission)),
-            "526" => Some(Direction::Debit(
+            ),
+            "510" => (Direction::Debit, TransactionType::TotalInternationalDebits),
+            "512" => (Direction::Debit, TransactionType::LetterOfCreditDebit),
+            "513" => (Direction::Debit, TransactionType::LetterOfCredit),
+            "514" => (Direction::Debit, TransactionType::ForeignExchangeDebit),
+            "515" => (Direction::Debit, TransactionType::TotalLettersOfCredit),
+            "516" => (Direction::Debit, TransactionType::ForeignRemittanceDebit),
+            "518" => (Direction::Debit, TransactionType::ForeignCollectionDebit),
+            "522" => (Direction::Debit, TransactionType::ForeignChecksPaid),
+            "524" => (Direction::Debit, TransactionType::Commission),
+            "526" => (
+                Direction::Debit,
                 TransactionType::InternationalMoneyMarketTrading,
-            )),
-            "527" => Some(Direction::Debit(TransactionType::StandingOrder)),
-            "529" => Some(Direction::Debit(
+            ),
+            "527" => (Direction::Debit, TransactionType::StandingOrder),
+            "529" => (
+                Direction::Debit,
                 TransactionType::MiscellaneousInternationalDebit,
-            )),
-            "530" => Some(Direction::Debit(TransactionType::TotalSecurityDebits)),
-            "531" => Some(Direction::Debit(TransactionType::SecuritiesPurchased)),
-            "532" => Some(Direction::Debit(
+            ),
+            "530" => (Direction::Debit, TransactionType::TotalSecurityDebits),
+            "531" => (Direction::Debit, TransactionType::SecuritiesPurchased),
+            "532" => (
+                Direction::Debit,
                 TransactionType::TotalAmountOfSecuritiesPurchased,
-            )),
-            "533" => Some(Direction::Debit(TransactionType::SecurityCollectionDebit)),
-            "534" => Some(Direction::Debit(
+            ),
+            "533" => (Direction::Debit, TransactionType::SecurityCollectionDebit),
+            "534" => (
+                Direction::Debit,
                 TransactionType::TotalMiscellaneousSecuritiesDbFf,
-            )),
-            "535" => Some(Direction::Debit(
+            ),
+            "535" => (
+                Direction::Debit,
                 TransactionType::PurchaseOfEquitySecurities,
-            )),
-            "536" => Some(Direction::Debit(
+            ),
+            "536" => (
+                Direction::Debit,
                 TransactionType::TotalMiscellaneousSecuritiesDebitChf,
-            )),
-            "537" => Some(Direction::Debit(TransactionType::TotalCollectionDebit)),
-            "538" => Some(Direction::Debit(TransactionType::MaturedRepurchaseOrder)),
-            "539" => Some(Direction::Debit(
+            ),
+            "537" => (Direction::Debit, TransactionType::TotalCollectionDebit),
+            "538" => (Direction::Debit, TransactionType::MaturedRepurchaseOrder),
+            "539" => (
+                Direction::Debit,
                 TransactionType::TotalBankersAcceptancesDebit,
-            )),
-            "540" => Some(Direction::Debit(TransactionType::CouponCollectionDebit)),
-            "541" => Some(Direction::Debit(TransactionType::BankersAcceptances)),
-            "542" => Some(Direction::Debit(TransactionType::PurchaseOfDebtSecurities)),
-            "543" => Some(Direction::Debit(TransactionType::DomesticCollection)),
-            "544" => Some(Direction::Debit(
+            ),
+            "540" => (Direction::Debit, TransactionType::CouponCollectionDebit),
+            "541" => (Direction::Debit, TransactionType::BankersAcceptances),
+            "542" => (Direction::Debit, TransactionType::PurchaseOfDebtSecurities),
+            "543" => (Direction::Debit, TransactionType::DomesticCollection),
+            "544" => (
+                Direction::Debit,
                 TransactionType::InterestMaturedPrincipalPayment,
-            )),
-            "546" => Some(Direction::Debit(TransactionType::CommercialPaper)),
-            "547" => Some(Direction::Debit(TransactionType::CapitalChange)),
-            "548" => Some(Direction::Debit(
+            ),
+            "546" => (Direction::Debit, TransactionType::CommercialPaper),
+            "547" => (Direction::Debit, TransactionType::CapitalChange),
+            "548" => (
+                Direction::Debit,
                 TransactionType::SavingsBondsSalesAdjustment,
-            )),
-            "549" => Some(Direction::Debit(
+            ),
+            "549" => (
+                Direction::Debit,
                 TransactionType::MiscellaneousSecurityDebit,
-            )),
-            "550" => Some(Direction::Debit(
+            ),
+            "550" => (
+                Direction::Debit,
                 TransactionType::TotalDepositedItemsReturned,
-            )),
-            "551" => Some(Direction::Debit(TransactionType::TotalCreditReversals)),
-            "552" => Some(Direction::Debit(TransactionType::CreditReversal)),
-            "554" => Some(Direction::Debit(
+            ),
+            "551" => (Direction::Debit, TransactionType::TotalCreditReversals),
+            "552" => (Direction::Debit, TransactionType::CreditReversal),
+            "554" => (
+                Direction::Debit,
                 TransactionType::PostingErrorCorrectionDebit,
-            )),
-            "555" => Some(Direction::Debit(TransactionType::DepositedItemReturned)),
-            "556" => Some(Direction::Debit(TransactionType::TotalAchReturnItems)),
-            "557" => Some(Direction::Debit(TransactionType::IndividualAchReturnItem)),
-            "558" => Some(Direction::Debit(TransactionType::AchReversalDebit)),
-            "560" => Some(Direction::Debit(TransactionType::TotalRejectedDebits)),
-            "561" => Some(Direction::Debit(TransactionType::IndividualRejectedDebit)),
-            "563" => Some(Direction::Debit(TransactionType::Overdraft)),
-            "564" => Some(Direction::Debit(TransactionType::OverdraftFee)),
-            "566" => Some(Direction::Debit(TransactionType::ReturnItem)),
-            "567" => Some(Direction::Debit(TransactionType::ReturnItemFee)),
-            "568" => Some(Direction::Debit(TransactionType::ReturnItemAdjustment)),
-            "570" => Some(Direction::Debit(TransactionType::TotalZbaDebits)),
-            "574" => Some(Direction::Debit(TransactionType::CumulativeZbaDebits)),
-            "575" => Some(Direction::Debit(TransactionType::ZbaDebit)),
-            "577" => Some(Direction::Debit(TransactionType::ZbaDebitTransfer)),
-            "578" => Some(Direction::Debit(TransactionType::ZbaDebitAdjustment)),
-            "580" => Some(Direction::Debit(
+            ),
+            "555" => (Direction::Debit, TransactionType::DepositedItemReturned),
+            "556" => (Direction::Debit, TransactionType::TotalAchReturnItems),
+            "557" => (Direction::Debit, TransactionType::IndividualAchReturnItem),
+            "558" => (Direction::Debit, TransactionType::AchReversalDebit),
+            "560" => (Direction::Debit, TransactionType::TotalRejectedDebits),
+            "561" => (Direction::Debit, TransactionType::IndividualRejectedDebit),
+            "563" => (Direction::Debit, TransactionType::Overdraft),
+            "564" => (Direction::Debit, TransactionType::OverdraftFee),
+            "566" => (Direction::Debit, TransactionType::ReturnItem),
+            "567" => (Direction::Debit, TransactionType::ReturnItemFee),
+            "568" => (Direction::Debit, TransactionType::ReturnItemAdjustment),
+            "570" => (Direction::Debit, TransactionType::TotalZbaDebits),
+            "574" => (Direction::Debit, TransactionType::CumulativeZbaDebits),
+            "575" => (Direction::Debit, TransactionType::ZbaDebit),
+            "577" => (Direction::Debit, TransactionType::ZbaDebitTransfer),
+            "578" => (Direction::Debit, TransactionType::ZbaDebitAdjustment),
+            "580" => (
+                Direction::Debit,
                 TransactionType::TotalControlledDisbursingDebits,
-            )),
-            "581" => Some(Direction::Debit(
+            ),
+            "581" => (
+                Direction::Debit,
                 TransactionType::IndividualControlledDisbursingDebit,
-            )),
-            "583" => Some(Direction::Debit(
+            ),
+            "583" => (
+                Direction::Debit,
                 TransactionType::TotalDisbursingChecksPaidEarlyAmount,
-            )),
-            "584" => Some(Direction::Debit(
+            ),
+            "584" => (
+                Direction::Debit,
                 TransactionType::TotalDisbursingChecksPaidLaterAmount,
-            )),
-            "585" => Some(Direction::Debit(
+            ),
+            "585" => (
+                Direction::Debit,
                 TransactionType::DisbursingFundingRequirement,
-            )),
-            "586" => Some(Direction::Debit(TransactionType::FrbPresentmentEstimate)),
-            "587" => Some(Direction::Debit(
+            ),
+            "586" => (Direction::Debit, TransactionType::FrbPresentmentEstimate),
+            "587" => (
+                Direction::Debit,
                 TransactionType::LateDebitsAfterNotification,
-            )),
-            "588" => Some(Direction::Debit(
+            ),
+            "588" => (
+                Direction::Debit,
                 TransactionType::TotalDisbursingChecksPaidLastAmount,
-            )),
-            "590" => Some(Direction::Debit(TransactionType::TotalDtcDebits)),
-            "594" => Some(Direction::Debit(TransactionType::TotalAtmDebits)),
-            "595" => Some(Direction::Debit(TransactionType::AtmDebit)),
-            "596" => Some(Direction::Debit(TransactionType::TotalAprDebits)),
-            "597" => Some(Direction::Debit(TransactionType::ArpDebit)),
-            "601" => Some(Direction::Debit(
+            ),
+            "590" => (Direction::Debit, TransactionType::TotalDtcDebits),
+            "594" => (Direction::Debit, TransactionType::TotalAtmDebits),
+            "595" => (Direction::Debit, TransactionType::AtmDebit),
+            "596" => (Direction::Debit, TransactionType::TotalAprDebits),
+            "597" => (Direction::Debit, TransactionType::ArpDebit),
+            "601" => (
+                Direction::Debit,
                 TransactionType::EstimatedTotalDisbursement,
-            )),
-            "602" => Some(Direction::Debit(TransactionType::AdjustedTotalDisbursement)),
-            "610" => Some(Direction::Debit(TransactionType::TotalFundsRequired)),
-            "611" => Some(Direction::Debit(TransactionType::TotalWireTransfersOutChf)),
-            "612" => Some(Direction::Debit(TransactionType::TotalWireTransfersOutFf)),
-            "613" => Some(Direction::Debit(
+            ),
+            "602" => (Direction::Debit, TransactionType::AdjustedTotalDisbursement),
+            "610" => (Direction::Debit, TransactionType::TotalFundsRequired),
+            "611" => (Direction::Debit, TransactionType::TotalWireTransfersOutChf),
+            "612" => (Direction::Debit, TransactionType::TotalWireTransfersOutFf),
+            "613" => (
+                Direction::Debit,
                 TransactionType::TotalInternationalDebitChf,
-            )),
-            "614" => Some(Direction::Debit(TransactionType::TotalInternationalDebitFf)),
-            "615" => Some(Direction::Debit(
+            ),
+            "614" => (Direction::Debit, TransactionType::TotalInternationalDebitFf),
+            "615" => (
+                Direction::Debit,
                 TransactionType::TotalFederalReserveBankCommercialBankDebit,
-            )),
-            "616" => Some(Direction::Debit(
+            ),
+            "616" => (
+                Direction::Debit,
                 TransactionType::FederalReserveBankCommercialBankDebit,
-            )),
-            "617" => Some(Direction::Debit(
+            ),
+            "617" => (
+                Direction::Debit,
                 TransactionType::TotalSecuritiesPurchasedChf,
-            )),
-            "618" => Some(Direction::Debit(
+            ),
+            "618" => (
+                Direction::Debit,
                 TransactionType::TotalSecuritiesPurchasedFf,
-            )),
-            "621" => Some(Direction::Debit(TransactionType::TotalBrokerDebitsChf)),
-            "622" => Some(Direction::Debit(TransactionType::BrokerDebit)),
-            "623" => Some(Direction::Debit(TransactionType::TotalBrokerDebitsFf)),
-            "625" => Some(Direction::Debit(TransactionType::TotalBrokerDebits)),
-            "626" => Some(Direction::Debit(TransactionType::TotalFedFundsPurchased)),
-            "627" => Some(Direction::Debit(TransactionType::FedFundsPurchased)),
-            "628" => Some(Direction::Debit(TransactionType::TotalCashCenterDebits)),
-            "629" => Some(Direction::Debit(TransactionType::CashCenterDebit)),
-            "630" => Some(Direction::Debit(TransactionType::TotalDebitAdjustments)),
-            "631" => Some(Direction::Debit(TransactionType::DebitAdjustment)),
-            "632" => Some(Direction::Debit(TransactionType::TotalTrustDebits)),
-            "633" => Some(Direction::Debit(TransactionType::TrustDebit)),
-            "634" => Some(Direction::Debit(TransactionType::YtdAdjustmentDebit)),
-            "640" => Some(Direction::Debit(TransactionType::TotalEscrowDebits)),
-            "641" => Some(Direction::Debit(TransactionType::IndividualEscrowDebit)),
-            "644" => Some(Direction::Debit(TransactionType::IndividualBackValueDebit)),
-            "646" => Some(Direction::Debit(TransactionType::TransferCalculationDebit)),
-            "650" => Some(Direction::Debit(TransactionType::InvestmentsPurchased)),
-            "651" => Some(Direction::Debit(
+            ),
+            "621" => (Direction::Debit, TransactionType::TotalBrokerDebitsChf),
+            "622" => (Direction::Debit, TransactionType::BrokerDebit),
+            "623" => (Direction::Debit, TransactionType::TotalBrokerDebitsFf),
+            "625" => (Direction::Debit, TransactionType::TotalBrokerDebits),
+            "626" => (Direction::Debit, TransactionType::TotalFedFundsPurchased),
+            "627" => (Direction::Debit, TransactionType::FedFundsPurchased),
+            "628" => (Direction::Debit, TransactionType::TotalCashCenterDebits),
+            "629" => (Direction::Debit, TransactionType::CashCenterDebit),
+            "630" => (Direction::Debit, TransactionType::TotalDebitAdjustments),
+            "631" => (Direction::Debit, TransactionType::DebitAdjustment),
+            "632" => (Direction::Debit, TransactionType::TotalTrustDebits),
+            "633" => (Direction::Debit, TransactionType::TrustDebit),
+            "634" => (Direction::Debit, TransactionType::YtdAdjustmentDebit),
+            "640" => (Direction::Debit, TransactionType::TotalEscrowDebits),
+            "641" => (Direction::Debit, TransactionType::IndividualEscrowDebit),
+            "644" => (Direction::Debit, TransactionType::IndividualBackValueDebit),
+            "646" => (Direction::Debit, TransactionType::TransferCalculationDebit),
+            "650" => (Direction::Debit, TransactionType::InvestmentsPurchased),
+            "651" => (
+                Direction::Debit,
                 TransactionType::IndividualInvestmentPurchased,
-            )),
-            "654" => Some(Direction::Debit(TransactionType::InterestDebit)),
-            "655" => Some(Direction::Debit(
+            ),
+            "654" => (Direction::Debit, TransactionType::InterestDebit),
+            "655" => (
+                Direction::Debit,
                 TransactionType::TotalInvestmentInterestDebits,
-            )),
-            "656" => Some(Direction::Debit(TransactionType::SweepPrincipalBuy)),
-            "657" => Some(Direction::Debit(TransactionType::FuturesDebit)),
-            "658" => Some(Direction::Debit(TransactionType::PrincipalPaymentsDebit)),
-            "659" => Some(Direction::Debit(TransactionType::InterestAdjustmentDebit)),
-            "661" => Some(Direction::Debit(TransactionType::AccountAnalysisFee)),
-            "662" => Some(Direction::Debit(
+            ),
+            "656" => (Direction::Debit, TransactionType::SweepPrincipalBuy),
+            "657" => (Direction::Debit, TransactionType::FuturesDebit),
+            "658" => (Direction::Debit, TransactionType::PrincipalPaymentsDebit),
+            "659" => (Direction::Debit, TransactionType::InterestAdjustmentDebit),
+            "661" => (Direction::Debit, TransactionType::AccountAnalysisFee),
+            "662" => (
+                Direction::Debit,
                 TransactionType::CorrespondentCollectionDebit,
-            )),
-            "663" => Some(Direction::Debit(
+            ),
+            "663" => (
+                Direction::Debit,
                 TransactionType::CorrespondentCollectionAdjustment,
-            )),
-            "664" => Some(Direction::Debit(TransactionType::LoanParticipation)),
-            "665" => Some(Direction::Debit(TransactionType::InterceptDebits)),
-            "666" => Some(Direction::Debit(TransactionType::CurrencyAndCoinShipped)),
-            "667" => Some(Direction::Debit(TransactionType::FoodStampLetter)),
-            "668" => Some(Direction::Debit(TransactionType::FoodStampAdjustment)),
-            "669" => Some(Direction::Debit(TransactionType::ClearingSettlementDebit)),
-            "670" => Some(Direction::Debit(TransactionType::TotalBackValueDebits)),
-            "672" => Some(Direction::Debit(TransactionType::BackValueAdjustment)),
-            "673" => Some(Direction::Debit(TransactionType::CustomerPayroll)),
-            "674" => Some(Direction::Debit(TransactionType::FrbStatementRecap)),
-            "676" => Some(Direction::Debit(
+            ),
+            "664" => (Direction::Debit, TransactionType::LoanParticipation),
+            "665" => (Direction::Debit, TransactionType::InterceptDebits),
+            "666" => (Direction::Debit, TransactionType::CurrencyAndCoinShipped),
+            "667" => (Direction::Debit, TransactionType::FoodStampLetter),
+            "668" => (Direction::Debit, TransactionType::FoodStampAdjustment),
+            "669" => (Direction::Debit, TransactionType::ClearingSettlementDebit),
+            "670" => (Direction::Debit, TransactionType::TotalBackValueDebits),
+            "672" => (Direction::Debit, TransactionType::BackValueAdjustment),
+            "673" => (Direction::Debit, TransactionType::CustomerPayroll),
+            "674" => (Direction::Debit, TransactionType::FrbStatementRecap),
+            "676" => (
+                Direction::Debit,
                 TransactionType::SavingsBondLetterOrAdjustment,
-            )),
-            "677" => Some(Direction::Debit(TransactionType::TreasuryTaxAndLoanDebit)),
-            "678" => Some(Direction::Debit(TransactionType::TransferOfTreasuryDebit)),
-            "679" => Some(Direction::Debit(
+            ),
+            "677" => (Direction::Debit, TransactionType::TreasuryTaxAndLoanDebit),
+            "678" => (Direction::Debit, TransactionType::TransferOfTreasuryDebit),
+            "679" => (
+                Direction::Debit,
                 TransactionType::FrbGovernmentChecksCashLetterDebit,
-            )),
-            "681" => Some(Direction::Debit(
+            ),
+            "681" => (
+                Direction::Debit,
                 TransactionType::FrbGovernmentCheckAdjustment,
-            )),
-            "682" => Some(Direction::Debit(TransactionType::FrbPostalMoneyOrderDebit)),
-            "683" => Some(Direction::Debit(
+            ),
+            "682" => (Direction::Debit, TransactionType::FrbPostalMoneyOrderDebit),
+            "683" => (
+                Direction::Debit,
                 TransactionType::FrbPostalMoneyOrderAdjustment,
-            )),
-            "684" => Some(Direction::Debit(
+            ),
+            "684" => (
+                Direction::Debit,
                 TransactionType::FrbCashLetterAutoChargeDebit,
-            )),
-            "685" => Some(Direction::Debit(TransactionType::TotalUniversalDebits)),
-            "686" => Some(Direction::Debit(
+            ),
+            "685" => (Direction::Debit, TransactionType::TotalUniversalDebits),
+            "686" => (
+                Direction::Debit,
                 TransactionType::FrbCashLetterAutoChargeAdjustment,
-            )),
-            "687" => Some(Direction::Debit(
+            ),
+            "687" => (
+                Direction::Debit,
                 TransactionType::FrbFineSortCashLetterDebit,
-            )),
-            "688" => Some(Direction::Debit(TransactionType::FrbFineSortAdjustment)),
-            "689" => Some(Direction::Debit(TransactionType::FrbFreightPaymentDebits)),
-            "690" => Some(Direction::Debit(TransactionType::TotalMiscellaneousDebits)),
-            "691" => Some(Direction::Debit(TransactionType::UniversalDebit)),
-            "692" => Some(Direction::Debit(TransactionType::FreightPaymentDebit)),
-            "693" => Some(Direction::Debit(TransactionType::ItemizedDebitOver10000)),
-            "694" => Some(Direction::Debit(TransactionType::DepositReversal)),
-            "695" => Some(Direction::Debit(TransactionType::DepositCorrectionDebit)),
-            "696" => Some(Direction::Debit(TransactionType::RegularCollectionDebit)),
-            "697" => Some(Direction::Debit(TransactionType::CumulativeDebits)),
-            "698" => Some(Direction::Debit(TransactionType::MiscellaneousFees)),
-            "699" => Some(Direction::Debit(TransactionType::MiscellaneousDebit)),
-            "720" => Some(Direction::Credit(TransactionType::TotalLoanPayment)),
-            "721" => Some(Direction::Credit(TransactionType::AmountAppliedToInterest)),
-            "722" => Some(Direction::Credit(TransactionType::AmountAppliedToPrincipal)),
-            "723" => Some(Direction::Credit(TransactionType::AmountAppliedToEscrow)),
-            "724" => Some(Direction::Credit(
+            ),
+            "688" => (Direction::Debit, TransactionType::FrbFineSortAdjustment),
+            "689" => (Direction::Debit, TransactionType::FrbFreightPaymentDebits),
+            "690" => (Direction::Debit, TransactionType::TotalMiscellaneousDebits),
+            "691" => (Direction::Debit, TransactionType::UniversalDebit),
+            "692" => (Direction::Debit, TransactionType::FreightPaymentDebit),
+            "693" => (Direction::Debit, TransactionType::ItemizedDebitOver10000),
+            "694" => (Direction::Debit, TransactionType::DepositReversal),
+            "695" => (Direction::Debit, TransactionType::DepositCorrectionDebit),
+            "696" => (Direction::Debit, TransactionType::RegularCollectionDebit),
+            "697" => (Direction::Debit, TransactionType::CumulativeDebits),
+            "698" => (Direction::Debit, TransactionType::MiscellaneousFees),
+            "699" => (Direction::Debit, TransactionType::MiscellaneousDebit),
+            "720" => (Direction::Credit, TransactionType::TotalLoanPayment),
+            "721" => (Direction::Credit, TransactionType::AmountAppliedToInterest),
+            "722" => (Direction::Credit, TransactionType::AmountAppliedToPrincipal),
+            "723" => (Direction::Credit, TransactionType::AmountAppliedToEscrow),
+            "724" => (
+                Direction::Credit,
                 TransactionType::AmountAppliedToLateCharges,
-            )),
-            "725" => Some(Direction::Credit(TransactionType::AmountAppliedToBuydown)),
-            "726" => Some(Direction::Credit(TransactionType::AmountAppliedToMiscFees)),
-            "727" => Some(Direction::Credit(
+            ),
+            "725" => (Direction::Credit, TransactionType::AmountAppliedToBuydown),
+            "726" => (Direction::Credit, TransactionType::AmountAppliedToMiscFees),
+            "727" => (
+                Direction::Credit,
                 TransactionType::AmountAppliedToDeferredInterestDetail,
-            )),
-            "728" => Some(Direction::Credit(
+            ),
+            "728" => (
+                Direction::Credit,
                 TransactionType::AmountAppliedToServiceCharge,
-            )),
-            "760" => Some(Direction::Debit(TransactionType::LoanDisbursement)),
+            ),
+            "760" => (Direction::Debit, TransactionType::LoanDisbursement),
 
-            &_ => None,
+            &_ => (Direction::Unknown, TransactionType::Unknown),
         }
     }
 }
