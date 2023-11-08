@@ -1,7 +1,7 @@
 use chrono::{NaiveDate, NaiveTime};
 use log::{debug, info};
-use serde::{Deserialize, Serialize};
-use std::str::FromStr;
+use serde::{Deserialize, Serialize, Serializer};
+use std::{collections::HashMap, str::FromStr};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Bai2File {
@@ -367,6 +367,12 @@ impl Account {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+pub enum FundsSubType {
+    S,
+    D,
+}
+
+#[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "snake_case")]
 pub enum FundsType {
     Unknown,
@@ -374,59 +380,150 @@ pub enum FundsType {
     OneDayAvailability,
     TwoOrMoreDaysAvailability,
     ValueDated,
-    DistributedAvailability,
+    DistributedAvailability(FundsSubType),
 }
 
 impl FundsType {
-    fn parse(value: &str) -> Option<FundsType> {
+    fn parse(value: &str) -> FundsType {
         match parse_string(value).as_str() {
-            "0" => Some(FundsType::ImmediateAvailability),
-            "1" => Some(FundsType::OneDayAvailability),
-            "2" => Some(FundsType::TwoOrMoreDaysAvailability),
-            "V" => Some(FundsType::ValueDated),
-            "S" => Some(FundsType::DistributedAvailability),
-            "D" => Some(FundsType::DistributedAvailability),
-            _ => None,
+            "0" => FundsType::ImmediateAvailability,
+            "1" => FundsType::OneDayAvailability,
+            "2" => FundsType::TwoOrMoreDaysAvailability,
+            "V" => FundsType::ValueDated,
+            "S" => FundsType::DistributedAvailability(FundsSubType::S),
+            "D" => FundsType::DistributedAvailability(FundsSubType::D),
+            _ => FundsType::Unknown,
+        }
+    }
+}
+
+impl Serialize for FundsType {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match *self {
+            FundsType::Unknown => serializer.serialize_unit_variant("FundsType", 0, "unknown"),
+            FundsType::ImmediateAvailability => {
+                serializer.serialize_unit_variant("FundsType", 1, "immediate_availability")
+            }
+            FundsType::OneDayAvailability => {
+                serializer.serialize_unit_variant("FundsType", 2, "one_day_availability")
+            }
+            FundsType::TwoOrMoreDaysAvailability => {
+                serializer.serialize_unit_variant("FundsType", 3, "two_or_more_days_availability")
+            }
+            FundsType::ValueDated => {
+                serializer.serialize_unit_variant("FundsType", 4, "value_dated")
+            }
+            FundsType::DistributedAvailability(_) => {
+                serializer.serialize_unit_variant("FundsType", 4, "distributed_availability")
+            }
         }
     }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct AccountHeader {
-    amount: Option<u64>,
+    amounts: Vec<Amount>,
     currency_code: String,
     customer_account_number: String,
-    funds_type: Option<FundsType>,
-    item_code: String,
-    item_count: Option<u16>,
-    account_type: Option<AccountType>,
+    value_date: Option<NaiveDate>,
+    value_time: Option<String>,
 }
 
 impl AccountHeader {
     fn parse(line: String, group: &Group) -> AccountHeader {
         let fields = line.split(",").collect::<Vec<&str>>();
 
-        let mut header = AccountHeader {
-            amount: parse_int(fields[4]),
+        return AccountHeader {
+            amounts: Amount::parse(fields[3..].to_vec()),
             currency_code: parse_currency(fields[2], &group.header.currency_code),
             customer_account_number: parse_string(fields[1]),
-            funds_type: None,
-            item_code: parse_string(fields[5]),
-            item_count: None,
-            account_type: AccountType::parse(fields[3]),
+            value_date: None,
+            value_time: None,
         };
+    }
+}
 
-        if fields.len() > 6 {
-            header.funds_type = FundsType::parse(fields[6]);
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Amount {
+    amount_type: Option<AmountType>,
+    amount: Option<u64>,
+    availability: HashMap<u16, u64>,
+    funds_type: FundsType,
+    item_count: Option<u16>,
+    value_date: Option<NaiveDate>,
+    value_time: Option<String>,
+}
+
+impl Amount {
+    fn parse(fields: Vec<&str>) -> Vec<Amount> {
+        let mut amounts = Vec::new();
+        let mut next_start_index = 0;
+
+        while fields.len() > next_start_index + 1 {
+            let mut amount = Amount {
+                amount: parse_int(fields[next_start_index + 1]),
+                amount_type: AmountType::parse(fields[next_start_index]),
+                availability: HashMap::new(),
+                funds_type: FundsType::parse(fields[next_start_index + 3]),
+                item_count: parse_int(fields[next_start_index + 2]),
+                value_date: None,
+                value_time: None,
+            };
+
+            match amount.funds_type {
+                FundsType::ValueDated => {
+                    amount.value_date = parse_date(fields[next_start_index + 4]);
+                    amount.value_time = parse_time(fields[next_start_index + 5]);
+                    next_start_index = next_start_index + 6;
+                }
+                FundsType::DistributedAvailability(FundsSubType::S) => {
+                    amount
+                        .availability
+                        .insert(0, parse_int(fields[next_start_index + 4]).unwrap());
+                    amount
+                        .availability
+                        .insert(1, parse_int(fields[next_start_index + 5]).unwrap());
+                    amount
+                        .availability
+                        .insert(2, parse_int(fields[next_start_index + 6]).unwrap());
+                    next_start_index = next_start_index + 7;
+                }
+                FundsType::DistributedAvailability(FundsSubType::D) => {
+                    let num_distributions = parse_int(fields[next_start_index + 4]).unwrap_or(0);
+                    next_start_index = next_start_index + 5;
+
+                    for _ in 0..num_distributions {
+                        match (
+                            parse_int(fields[next_start_index]),
+                            parse_int(fields[next_start_index + 1]),
+                        ) {
+                            (Some(days), Some(amt)) => {
+                                amount.availability.insert(days, amt);
+                            }
+                            _ => {}
+                        }
+
+                        next_start_index = next_start_index + 2;
+                    }
+                }
+                _ => {
+                    next_start_index = next_start_index + 4;
+                }
+            }
+
+            amounts.push(amount);
         }
 
-        return header;
+        return amounts;
     }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "snake_case")]
-pub enum AccountType {
+pub enum AmountType {
     AchNetPosition,
     AdjustedBalance,
     AdjustedBalanceMtd,
@@ -480,60 +577,60 @@ pub enum AccountType {
     ZeroDayFloat,
 }
 
-impl AccountType {
-    fn parse(number: &str) -> Option<AccountType> {
+impl AmountType {
+    fn parse(number: &str) -> Option<AmountType> {
         match number.trim().replace("/", "").as_str() {
-            "010" => Some(AccountType::OpeningLedger),
-            "011" => Some(AccountType::AverageOpeningLedgerMtd),
-            "012" => Some(AccountType::AverageOpeningLedgerYtd),
-            "015" => Some(AccountType::ClosingLedger),
-            "020" => Some(AccountType::AverageClosingLedgerMtd),
-            "021" => Some(AccountType::AverageClosingLedgerPreviousMonth),
-            "022" => Some(AccountType::AggregateBalanceAdjustments),
-            "024" => Some(AccountType::AverageClosingLedgerYtdPreviousMonth),
-            "025" => Some(AccountType::AverageClosingLedgerYtd),
-            "030" => Some(AccountType::CurrentLedger),
-            "037" => Some(AccountType::AchNetPosition),
-            "039" => Some(AccountType::OpeningAvailableAndTotalSameDayAchDtcDeposit),
-            "040" => Some(AccountType::OpeningAvailable),
-            "041" => Some(AccountType::AverageOpeningAvailableMtd),
-            "042" => Some(AccountType::AverageOpeningAvailableYtd),
-            "043" => Some(AccountType::AverageAvailablePreviousMonth),
-            "044" => Some(AccountType::DisbursingOpeningAvailableBalance),
-            "045" => Some(AccountType::ClosingAvailable),
-            "050" => Some(AccountType::AverageClosingAvailableMtd),
-            "051" => Some(AccountType::AverageClosingAvailableLastMonth),
-            "054" => Some(AccountType::AverageClosingAvailableYtdLastMonth),
-            "055" => Some(AccountType::AverageClosingAvailableYtd),
-            "056" => Some(AccountType::LoanBalance),
-            "057" => Some(AccountType::TotalInvestmentPosition),
-            "059" => Some(AccountType::CurrentAvailableCrsSupressed),
-            "060" => Some(AccountType::CurrentAvailable),
-            "061" => Some(AccountType::AverageCurrentAvailableMtd),
-            "062" => Some(AccountType::AverageCurrentAvailableYtd),
-            "063" => Some(AccountType::TotalFloat),
-            "065" => Some(AccountType::TargetBalance),
-            "066" => Some(AccountType::AdjustedBalance),
-            "067" => Some(AccountType::AdjustedBalanceMtd),
-            "068" => Some(AccountType::AdjustedBalanceYtd),
-            "070" => Some(AccountType::ZeroDayFloat),
-            "072" => Some(AccountType::OneDayFloat),
-            "073" => Some(AccountType::FloatAdjustment),
-            "074" => Some(AccountType::TwoOrMoreDaysFloat),
-            "075" => Some(AccountType::ThreeOrMoreDaysFloat),
-            "076" => Some(AccountType::AdjustmentToBalances),
-            "077" => Some(AccountType::AverageAdjustmentToBalancesMtd),
-            "078" => Some(AccountType::AverageAdjustmentToBalancesYtd),
-            "079" => Some(AccountType::FourDayFloat),
-            "080" => Some(AccountType::FiveDayFloat),
-            "081" => Some(AccountType::SixDayFloat),
-            "082" => Some(AccountType::Average1DayFloatMtd),
-            "083" => Some(AccountType::Average1DayFloatYtd),
-            "084" => Some(AccountType::Average2DayFloatMtd),
-            "085" => Some(AccountType::Average2DayFloatYtd),
-            "086" => Some(AccountType::TransferCalculation),
-            "100" => Some(AccountType::TotalCredits),
-            "400" => Some(AccountType::TotalDebits),
+            "010" => Some(AmountType::OpeningLedger),
+            "011" => Some(AmountType::AverageOpeningLedgerMtd),
+            "012" => Some(AmountType::AverageOpeningLedgerYtd),
+            "015" => Some(AmountType::ClosingLedger),
+            "020" => Some(AmountType::AverageClosingLedgerMtd),
+            "021" => Some(AmountType::AverageClosingLedgerPreviousMonth),
+            "022" => Some(AmountType::AggregateBalanceAdjustments),
+            "024" => Some(AmountType::AverageClosingLedgerYtdPreviousMonth),
+            "025" => Some(AmountType::AverageClosingLedgerYtd),
+            "030" => Some(AmountType::CurrentLedger),
+            "037" => Some(AmountType::AchNetPosition),
+            "039" => Some(AmountType::OpeningAvailableAndTotalSameDayAchDtcDeposit),
+            "040" => Some(AmountType::OpeningAvailable),
+            "041" => Some(AmountType::AverageOpeningAvailableMtd),
+            "042" => Some(AmountType::AverageOpeningAvailableYtd),
+            "043" => Some(AmountType::AverageAvailablePreviousMonth),
+            "044" => Some(AmountType::DisbursingOpeningAvailableBalance),
+            "045" => Some(AmountType::ClosingAvailable),
+            "050" => Some(AmountType::AverageClosingAvailableMtd),
+            "051" => Some(AmountType::AverageClosingAvailableLastMonth),
+            "054" => Some(AmountType::AverageClosingAvailableYtdLastMonth),
+            "055" => Some(AmountType::AverageClosingAvailableYtd),
+            "056" => Some(AmountType::LoanBalance),
+            "057" => Some(AmountType::TotalInvestmentPosition),
+            "059" => Some(AmountType::CurrentAvailableCrsSupressed),
+            "060" => Some(AmountType::CurrentAvailable),
+            "061" => Some(AmountType::AverageCurrentAvailableMtd),
+            "062" => Some(AmountType::AverageCurrentAvailableYtd),
+            "063" => Some(AmountType::TotalFloat),
+            "065" => Some(AmountType::TargetBalance),
+            "066" => Some(AmountType::AdjustedBalance),
+            "067" => Some(AmountType::AdjustedBalanceMtd),
+            "068" => Some(AmountType::AdjustedBalanceYtd),
+            "070" => Some(AmountType::ZeroDayFloat),
+            "072" => Some(AmountType::OneDayFloat),
+            "073" => Some(AmountType::FloatAdjustment),
+            "074" => Some(AmountType::TwoOrMoreDaysFloat),
+            "075" => Some(AmountType::ThreeOrMoreDaysFloat),
+            "076" => Some(AmountType::AdjustmentToBalances),
+            "077" => Some(AmountType::AverageAdjustmentToBalancesMtd),
+            "078" => Some(AmountType::AverageAdjustmentToBalancesYtd),
+            "079" => Some(AmountType::FourDayFloat),
+            "080" => Some(AmountType::FiveDayFloat),
+            "081" => Some(AmountType::SixDayFloat),
+            "082" => Some(AmountType::Average1DayFloatMtd),
+            "083" => Some(AmountType::Average1DayFloatYtd),
+            "084" => Some(AmountType::Average2DayFloatMtd),
+            "085" => Some(AmountType::Average2DayFloatYtd),
+            "086" => Some(AmountType::TransferCalculation),
+            "100" => Some(AmountType::TotalCredits),
+            "400" => Some(AmountType::TotalDebits),
             _ => None,
         }
     }
@@ -567,7 +664,7 @@ pub struct Transaction {
     continuations: Vec<Continuation>,
     customer_reference_number: String,
     direction: Direction,
-    funds_type: Option<FundsType>,
+    funds_type: FundsType,
     text: String,
     transaction_type: TransactionType,
 }
