@@ -449,8 +449,8 @@ impl AccountHeader {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Amount {
     amount_type: Option<AmountType>,
-    amount: Option<u64>,
-    availability: HashMap<u16, u64>,
+    amount: Option<i64>,
+    availability: HashMap<u16, i64>,
     funds_type: FundsType,
     item_count: Option<u16>,
     value_date: Option<NaiveDate>,
