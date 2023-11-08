@@ -29,7 +29,7 @@ fn parse_string(string: &str) -> String {
 }
 
 fn parse_date(string: &str) -> Option<NaiveDate> {
-    let date = string.trim().replace("/", "");
+    let date = parse_string(string);
     let maybe_date = NaiveDate::parse_from_str(&date, "%y%m%d");
     match maybe_date {
         Ok(d) => Some(d),
@@ -37,12 +37,15 @@ fn parse_date(string: &str) -> Option<NaiveDate> {
     }
 }
 
-fn parse_time(string: &str) -> Option<NaiveTime> {
-    let time = string.trim().replace("/", "");
-    let maybe_time = NaiveTime::parse_from_str(&time, "%H%M");
-    match maybe_time {
-        Ok(t) => Some(t),
-        Err(_) => None,
+fn parse_time(string: &str) -> Option<String> {
+    match parse_string(string).as_str() {
+        "" => None,
+        "2400" => Some("end of day".to_string()),
+        "9999" => Some("end of day".to_string()),
+        time => match NaiveTime::parse_from_str(time, "%H%M") {
+            Ok(t) => Some(t.to_string()),
+            Err(_) => None,
+        },
     }
 }
 
@@ -173,7 +176,7 @@ impl Bai2File {
 pub struct FileHeader {
     pub block_size: Option<u8>,
     pub creation_date: Option<NaiveDate>,
-    pub creation_time: Option<NaiveTime>,
+    pub creation_time: Option<String>,
     pub file_id: String,
     pub physical_record_length: Option<u16>,
     pub receiver: String,
@@ -251,7 +254,7 @@ impl Group {
 pub struct GroupHeader {
     as_of_date: Option<NaiveDate>,
     as_of_date_modifier: String,
-    as_of_time: Option<NaiveTime>,
+    as_of_time: Option<String>,
     currency_code: String,
     receiver: String,
     sender: String,
