@@ -520,7 +520,7 @@ pub struct Transaction {
 
 impl Transaction {
     fn parse(line: String) -> Transaction {
-        let fields = line.split(",").collect::<Vec<&str>>();
+        let fields = line.splitn(6, ",").collect::<Vec<&str>>();
         debug!("Parsing transaction: {:?}", fields);
 
         let (direction, transaction_type) = TransactionType::parse(fields[1]);
@@ -537,7 +537,7 @@ impl Transaction {
         };
 
         if fields.len() > 6 {
-            transaction.text = parse_string(fields[6]);
+            transaction.text = parse_string(fields[6])
         }
 
         return transaction;
@@ -1713,10 +1713,14 @@ pub struct Continuation {
 
 impl Continuation {
     fn parse(line: String) -> Continuation {
-        let fields = line.split(",").collect::<Vec<&str>>();
-
-        Continuation {
-            text: parse_string(fields[1]),
+        if let Some((_, text)) = line.split_once(",") {
+            Continuation {
+                text: text.to_string(),
+            }
+        } else {
+            Continuation {
+                text: "".to_string(),
+            }
         }
     }
 }
