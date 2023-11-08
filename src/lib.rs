@@ -28,6 +28,13 @@ fn parse_string(string: &str) -> String {
     string.trim().replace("/", "")
 }
 
+fn parse_currency(string: &str) -> String {
+    return match parse_string(string).as_str() {
+        "" => "USD".to_string(),
+        c => c.to_string(),
+    };
+}
+
 fn parse_date(string: &str) -> Option<NaiveDate> {
     let date = parse_string(string);
     let maybe_date = NaiveDate::parse_from_str(&date, "%y%m%d");
@@ -291,7 +298,7 @@ impl GroupHeader {
             as_of_date: parse_date(fields[4]),
             as_of_date_modifier: parse_string(fields[7]),
             as_of_time: parse_time(fields[5]),
-            currency_code: parse_string(fields[6]),
+            currency_code: parse_currency(fields[6]),
             originator: parse_string(fields[2]),
             status: GroupStatus::parse(fields[3]),
             ultimate_receiver: parse_string(fields[1]),
@@ -379,7 +386,7 @@ impl AccountHeader {
 
         let mut header = AccountHeader {
             amount: parse_int(fields[4]),
-            currency_code: parse_string(fields[2]),
+            currency_code: parse_currency(fields[2]),
             customer_account_number: parse_string(fields[1]),
             funds_type: None,
             item_code: parse_string(fields[5]),
