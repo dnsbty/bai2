@@ -28,9 +28,9 @@ fn parse_string(string: &str) -> String {
     string.trim().replace("/", "")
 }
 
-fn parse_currency(string: &str) -> String {
+fn parse_currency(string: &str, default: &str) -> String {
     return match parse_string(string).as_str() {
-        "" => "USD".to_string(),
+        "" => default.to_string(),
         c => c.to_string(),
     };
 }
@@ -108,13 +108,14 @@ impl Bai2File {
                 }
                 "03" => {
                     debug!("account header found");
+                    let group = file.last_group();
                     let account = Account {
                         continuations: Vec::new(),
                         control: AccountControl::new(),
-                        header: AccountHeader::parse(line),
+                        header: AccountHeader::parse(line, group),
                         transactions: Vec::new(),
                     };
-                    file.last_group().accounts.push(account);
+                    group.accounts.push(account);
                     file.last_record_type = RecordType::Account;
                 }
                 "16" => {
@@ -319,7 +320,7 @@ impl GroupHeader {
             as_of_date: parse_date(fields[4]),
             as_of_date_modifier: AsOfDateModifier::parse(fields[7]),
             as_of_time: parse_time(fields[5]),
-            currency_code: parse_currency(fields[6]),
+            currency_code: parse_currency(fields[6], "USD"),
             originator: parse_string(fields[2]),
             status: GroupStatus::parse(fields[3]),
             ultimate_receiver: parse_string(fields[1]),
@@ -402,12 +403,12 @@ pub struct AccountHeader {
 }
 
 impl AccountHeader {
-    fn parse(line: String) -> AccountHeader {
+    fn parse(line: String, group: &Group) -> AccountHeader {
         let fields = line.split(",").collect::<Vec<&str>>();
 
         let mut header = AccountHeader {
             amount: parse_int(fields[4]),
-            currency_code: parse_currency(fields[2]),
+            currency_code: parse_currency(fields[2], &group.header.currency_code),
             customer_account_number: parse_string(fields[1]),
             funds_type: None,
             item_code: parse_string(fields[5]),
