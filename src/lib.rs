@@ -1866,7 +1866,7 @@ impl Continuation {
     fn parse(line: String) -> Continuation {
         if let Some((_, text)) = line.split_once(",") {
             Continuation {
-                text: text.to_string(),
+                text: parse_string(text),
             }
         } else {
             Continuation {
