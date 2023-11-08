@@ -256,9 +256,31 @@ pub struct GroupHeader {
     as_of_date_modifier: String,
     as_of_time: Option<String>,
     currency_code: String,
-    receiver: String,
-    sender: String,
-    status: String,
+    originator: String,
+    status: GroupStatus,
+    ultimate_receiver: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "snake_case")]
+pub enum GroupStatus {
+    Update,
+    Deletion,
+    Correction,
+    TestOnly,
+    Unknown(String),
+}
+
+impl GroupStatus {
+    fn parse(value: &str) -> GroupStatus {
+        match parse_string(value).as_str() {
+            "1" => GroupStatus::Update,
+            "2" => GroupStatus::Deletion,
+            "3" => GroupStatus::Correction,
+            "4" => GroupStatus::TestOnly,
+            code => GroupStatus::Unknown(code.to_string()),
+        }
+    }
 }
 
 impl GroupHeader {
@@ -270,9 +292,9 @@ impl GroupHeader {
             as_of_date_modifier: parse_string(fields[7]),
             as_of_time: parse_time(fields[5]),
             currency_code: parse_string(fields[6]),
-            receiver: parse_string(fields[1]),
-            sender: parse_string(fields[2]),
-            status: parse_string(fields[3]),
+            originator: parse_string(fields[2]),
+            status: GroupStatus::parse(fields[3]),
+            ultimate_receiver: parse_string(fields[1]),
         }
     }
 }
@@ -328,7 +350,7 @@ pub enum FundsType {
 
 impl FundsType {
     fn parse(value: &str) -> Option<FundsType> {
-        match value.trim().replace("/", "").as_str() {
+        match parse_string(value).as_str() {
             "0" => Some(FundsType::ImmediateAvailability),
             "1" => Some(FundsType::OneDayAvailability),
             "2" => Some(FundsType::TwoOrMoreDaysAvailability),
