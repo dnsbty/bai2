@@ -260,7 +260,7 @@ impl Group {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct GroupHeader {
     as_of_date: Option<NaiveDate>,
-    as_of_date_modifier: String,
+    as_of_date_modifier: Option<AsOfDateModifier>,
     as_of_time: Option<String>,
     currency_code: String,
     originator: String,
@@ -290,13 +290,34 @@ impl GroupStatus {
     }
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "snake_case")]
+pub enum AsOfDateModifier {
+    InterimPreviousDayData,
+    FinalPreviousDayData,
+    InterimSameDayData,
+    FinalSameDayData,
+}
+
+impl AsOfDateModifier {
+    fn parse(value: &str) -> Option<AsOfDateModifier> {
+        match parse_string(value).as_str() {
+            "1" => Some(AsOfDateModifier::InterimPreviousDayData),
+            "2" => Some(AsOfDateModifier::FinalPreviousDayData),
+            "3" => Some(AsOfDateModifier::InterimSameDayData),
+            "4" => Some(AsOfDateModifier::FinalSameDayData),
+            _ => None,
+        }
+    }
+}
+
 impl GroupHeader {
     fn parse(line: String) -> GroupHeader {
         let fields = line.split(",").collect::<Vec<&str>>();
 
         GroupHeader {
             as_of_date: parse_date(fields[4]),
-            as_of_date_modifier: parse_string(fields[7]),
+            as_of_date_modifier: AsOfDateModifier::parse(fields[7]),
             as_of_time: parse_time(fields[5]),
             currency_code: parse_currency(fields[6]),
             originator: parse_string(fields[2]),
