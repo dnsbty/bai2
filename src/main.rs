@@ -1,8 +1,7 @@
+use bai2::Bai2File;
 use clap::Parser;
 use env_logger::Env;
 use std::{fs, path::PathBuf};
-
-use bai2::Bai2File;
 
 /// Parse a BAI2 file into a rust object
 #[derive(Debug, Parser)]
@@ -10,7 +9,7 @@ use bai2::Bai2File;
 #[command(about = "Parse a BAI2 file", long_about = None)]
 #[clap(author, version, about, long_about = None)]
 struct Cli {
-    /// path to your NACHA file
+    /// path to your BAI2 file
     path: PathBuf,
 }
 
@@ -25,9 +24,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let content = fs::read_to_string(&cli.path)
         .map_err(|_| format!("could not read file `{}`", &cli.path.display()))?;
 
-    let file = Bai2File::new(content);
-
-    println!("{}", serde_json::to_string_pretty(&file).unwrap());
+    match Bai2File::new(content) {
+        Err(err) => println!("Failed to parse file: {}", err),
+        Ok(file) => {
+            println!("{}", serde_json::to_string_pretty(&file).unwrap());
+        }
+    };
 
     Ok(())
 }
