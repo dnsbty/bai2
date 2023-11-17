@@ -42,6 +42,10 @@ more closely aligns this parser to the official BAI2 specification.
   transaction detail line and each continuation is a separate string in the
   array
 
+### Security
+
+- Update rustix from 0.38.14 to 0.38.24
+
 ## [0.2.0] - 2023-11-06
 
 ### Changed
