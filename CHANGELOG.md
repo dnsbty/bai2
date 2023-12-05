@@ -44,19 +44,19 @@ update:
             }
           ],
           ...
--           "number_of_records": 8,
+-         "number_of_records": 8,
           "transactions": [
             {
               ...
--               "direction": "debit",
+-             "direction": "debit",
               ...
--               "transaction_type": "preauthorized_ach_debit",
--               "transaction_type_code": "455",
-+               "transaction_type": {
-+                 "code": "455",
-+                 "direction": "debit",
-+                 "type": "preauthorized_ach_debit"
-+               },
+-             "transaction_type": "preauthorized_ach_debit",
+-             "transaction_type_code": "455",
++             "transaction_type": {
++               "code": "455",
++               "direction": "debit",
++               "type": "preauthorized_ach_debit"
++             },
               ...
             }
           ],
