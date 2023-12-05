@@ -5,6 +5,71 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2023-12-05
+
+### Deleted
+
+- The control fields have been removed from the file, group, and account
+  structs. These fields are meant for checking the file's correctness, and the
+  vectors of groups, accounts, and transactions should be used as the source of
+  truth rather than these fields. Because of that I removed the fields.
+
+### Changed
+
+- Changed the transaction type to an enum and updated the serialization for it
+  as well.
+- Changed the amount type to an enum and updated the serialization for it as
+  well.
+
+Here is an overall diff of the output resulting from the changes made in this
+update:
+
+```diff
+{
+  ...
+  "groups": [
+    {
+      ...
+      "accounts": [
+        {
+          "amounts": [
+            {
+-             "amount_type": "current_ledger",
+-             "amount_type_code": "030",
++             "amount_type": {
++               "code": "030",
++               "type": "status",
++               "subtype": "current_ledger"
++             },
+            }
+          ],
+          ...
+-           "number_of_records": 8,
+          "transactions": [
+            {
+              ...
+-               "direction": "debit",
+              ...
+-               "transaction_type": "preauthorized_ach_debit",
+-               "transaction_type_code": "455",
++               "transaction_type": {
++                 "code": "455",
++                 "direction": "debit",
++                 "type": "preauthorized_ach_debit"
++               },
+              ...
+            }
+          ],
+          ...
+        }
+      ]
+      ...
+    }
+  ]
+  ...
+}
+```
+
 ## [0.3.0] - 2023-11-17
 
 On top of the public changes listed below, this version also includes an
