@@ -60,12 +60,21 @@ update:
               ...
             }
           ],
+-         "total": 119528685,
           ...
         }
       ]
       ...
+-     "number_of_accounts": 3,
+-     "number_of_records": 48,
+      ...
+-     "total": 278988489,
+      ...
     }
-  ]
+  ],
+- "number_of_groups": 1,
+- "number_of_records": 50,
+- "total": 278988489,
   ...
 }
 ```
