@@ -4,7 +4,7 @@ use serde::Serialize;
 use crate::scanner::node::Node;
 
 use super::account::Account;
-use super::util::{parse_currency, parse_date, parse_int, parse_string, parse_time};
+use super::util::{parse_currency, parse_date, parse_string, parse_time};
 
 #[derive(Debug, Serialize)]
 pub struct Group {
@@ -14,10 +14,7 @@ pub struct Group {
     as_of_time: Option<String>,
     currency_code: String,
     originator: String,
-    number_of_accounts: Option<u16>,
-    number_of_records: Option<u16>,
     status: GroupStatus,
-    total: Option<u64>,
     ultimate_receiver: String,
 }
 
@@ -49,11 +46,8 @@ impl Group {
                 as_of_date_modifier: AsOfDateModifier::parse(header_fields[7]),
                 as_of_time: parse_time(header_fields[5]),
                 currency_code,
-                number_of_accounts: parse_int(trailer_fields[2]),
-                number_of_records: parse_int(trailer_fields[3]),
                 originator: parse_string(header_fields[2]),
                 status: GroupStatus::parse(header_fields[3]),
-                total: parse_int(trailer_fields[1]),
                 ultimate_receiver: parse_string(header_fields[1]),
             }),
         }
