@@ -54,7 +54,6 @@ impl Account {
 #[derive(Debug, Serialize)]
 pub struct Amount {
     amount_type: AmountType,
-    amount_type_code: String,
     amount: Option<i64>,
     availability: HashMap<u16, i64>,
     funds_type: FundsType,
@@ -69,11 +68,9 @@ impl Amount {
         let mut next_start_index = 0;
 
         while fields.len() > next_start_index + 1 {
-            let amount_type_code = parse_string(fields[next_start_index]);
             let mut amount = Amount {
                 amount: parse_int(fields[next_start_index + 1]),
-                amount_type: AmountType::parse(&amount_type_code),
-                amount_type_code,
+                amount_type: AmountType::parse(fields[next_start_index]),
                 availability: HashMap::new(),
                 funds_type: FundsType::parse(fields[next_start_index + 3]),
                 item_count: parse_int(fields[next_start_index + 2]),
@@ -354,7 +351,7 @@ pub enum AmountSubtype {
 
 impl AmountType {
     fn parse(type_code: &str) -> AmountType {
-        let code = type_code.to_string();
+        let code = parse_string(type_code);
 
         match type_code {
             "010" => AmountType::Status(code, AmountSubtype::OpeningLedger),
